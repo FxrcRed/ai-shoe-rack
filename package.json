@@ -1,0 +1,6 @@
+{
+  "name": "ai-shoe-rack",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.js" }
+}

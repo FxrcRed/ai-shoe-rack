@@ -1,0 +1,7 @@
+.env
+node_modules/
+tools/
+
+# 给 AI 的本地笔记，不公开
+CLAUDE.md
+docs/

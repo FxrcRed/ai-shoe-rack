@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>实景装置合成</title>
+<meta name="theme-color" content="#f5f5f7">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <b class="brand" id="brand">实景装置合成</b>
+  <span class="bar-r"><span id="mode" class="badge"></span><button id="steps-btn" class="steps-btn" aria-expanded="false" aria-controls="steps"></button></span>
+</header>
+<ol id="steps" class="steps" hidden><li><button>拍照</button></li><li><button>需求</button></li><li><button>方案</button></li><li><button>材质</button></li><li><button>结算</button></li></ol>
+
+<main>
+<section id="s-home" class="card hero">
+  <p class="eyebrow">光轴鞋架 · AI 定制</p>
+  <h1>拍一张照片。<br>让它先住进你家。</h1>
+  <p class="lead">AI 读懂你家的透视、光线和动线，把按真实尺寸设计的鞋架合成进照片里。满意了，零件清单一键生成，交给厂家照单定制。</p>
+  <button class="primary big" data-go="s-photo">开始设计</button>
+  <ul class="feats">
+    <li><b>实景合成</b><span>透视、阴影与照片一致</span></li>
+    <li><b>避开动线</b><span>不挡门、不占过道</span></li>
+    <li><b>零件清单</b><span>光轴、连接件、隔板</span></li>
+  </ul>
+</section>
+
+<section id="s-photo" class="card" hidden>
+  <h2>① 拍下要放鞋架的角落</h2>
+  <p class="hint">换个角度多拍 1~2 张更准（最多 3 张），AI 会挑最清楚的一张来摆。</p>
+  <label for="cam" class="guide">
+    <svg viewBox="0 0 120 160" aria-hidden="true">
+      <rect x="2" y="2" width="116" height="156" rx="12" class="g-frame"/>
+      <path d="M8 8H112V96L84 104H36L8 96Z" class="g-wall"/>
+      <path d="M8 96L36 104H84L112 96V152H8Z" class="g-floor"/>
+      <path d="M8 96L36 104H84L112 96" class="g-base"/>
+      <path d="M36 104V8M84 104V8" class="g-edge"/>
+      <rect x="44" y="70" width="32" height="32" rx="2" class="g-rack"/>
+    </svg>
+    <ul>
+      <li><b>竖着拍</b>，站远一点</li>
+      <li>拍进<b>地面</b>和<b>墙脚线</b></li>
+      <li>能拍到门更好（用来估尺寸）</li>
+    </ul>
+  </label>
+  <div class="row">
+    <label class="btn primary">📷 拍照<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>
+    <label class="btn">🖼 从相册选<input id="pick" type="file" accept="image/*" multiple hidden></label>
+  </div>
+  <div id="photos" class="photos"></div>
+  <div class="row end">
+    <button data-go="s-need" class="ghost" id="skip-photo">没有照片，先跳过</button>
+    <button class="primary" id="photo-next" disabled>下一步</button>
+  </div>
+</section>
+
+<section id="s-need" class="card" hidden>
+  <h2>② 说说你的需求</h2>
+  <div class="mic-wrap">
+    <textarea id="desc" rows="3" placeholder="例如：这是我家门口，缺一个鞋架，平时五六双鞋，最好能随手挂雨伞"></textarea>
+    <button class="mic" id="mic-desc" title="按一下开始说话" aria-label="语音输入"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+  </div>
+  <p class="hint" id="mic-hint"></p>
+  <p class="label">装修风格 <span class="hint">点一下选上</span></p>
+  <div class="style-cards" id="styles"></div>
+  <div class="row end"><button class="ghost" id="to-design" hidden>回到方案 ›</button><button class="primary" id="gen">生成方案</button></div>
+</section>
+
+<section id="s-design" class="card app" hidden>
+  <div id="stage-home" class="stage-box">
+    <div id="stage" class="stage"><img id="stage-photo" alt=""><div class="handles" id="handles"></div></div>
+    <div class="tabs over" id="scheme-tabs"></div>
+  </div>
+  <div class="seg" id="seg">
+    <button data-pane="tips" class="on">提示</button><button data-pane="size">尺寸</button><button data-pane="pos">位置</button><button data-pane="look">显示</button><button data-pane="ai">AI 修改</button>
+  </div>
+  <div class="panes">
+    <div class="pane tips" data-pane="tips">
+      <p id="scheme-intro" class="intro"></p>
+      <p class="pill check" id="check-msg" hidden></p>
+      <div class="pill fit-msg" id="fit-msg" hidden></div>
+    </div>
+    <div class="pane" data-pane="size" hidden>
+      <div class="dial" data-k="width"><span>宽</span><button class="step" data-d="-5">−</button><input type="range" min="30" max="200" step="1"><button class="step" data-d="5">+</button><output></output></div>
+      <div class="dial" data-k="depth"><span>深</span><button class="step" data-d="-1">−</button><input type="range" min="15" max="60" step="1"><button class="step" data-d="1">+</button><output></output></div>
+      <div class="dial" data-k="height"><span>高</span><button class="step" data-d="-5">−</button><input type="range" min="25" max="200" step="1"><button class="step" data-d="5">+</button><output></output></div>
+      <div class="steppers">
+        <div class="stepper" data-k="levels"><span>层数</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
+        <div class="stepper" data-k="hooks"><span>挂钩</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
+      </div>
+      <p class="hint">也可以直接在照片上拖蓝点：右边改宽度、顶上改高度、左边每个点改那层隔板的高度。</p>
+      <div class="opt-row"><span>杆径</span><div class="chips sm" id="rods"></div></div>
+      <label class="toggle"><input type="checkbox" id="umb"> 挂伞杆 <span class="hint">（右侧伸出 12cm，带接水盘）</span></label>
+    </div>
+    <div class="pane" data-pane="pos" hidden>
+      <div class="row tight"><button id="rot-ccw">↺ 90°</button><button id="rot-cw">↻ 90°</button><button id="t-reset">按 AI 重新摆放</button></div>
+      <div class="dial"><span>大小</span><input type="range" id="t-scale" min="0.5" max="2" step="0.01"></div>
+      <div class="dial"><span>转向</span><input type="range" id="t-rot" min="-180" max="180" step="1"></div>
+      <div class="dial"><span>俯仰</span><input type="range" id="t-pitch" min="-10" max="80" step="0.5"></div>
+      <p class="hint">AI 已按照片透视摆好、按真实尺寸显示。单指拖动沿地面移位置，双指旋转缩放；电脑上滚轮缩放、Shift+滚轮旋转。</p>
+    </div>
+    <div class="pane" data-pane="look" hidden>
+      <div class="dial"><span>光照</span><input type="range" id="t-light" min="-180" max="180" step="5"></div>
+      <p class="hint" id="light-src"></p>
+      <label class="toggle"><input type="checkbox" id="show-shoes" checked> 显示参照鞋 <span class="hint">（男 42 码 29×11cm · 女 37 码 25×9cm，真实尺寸）</span></label>
+      <div class="row tight"><button id="retake">📷 重拍照片</button><button id="snap">保存效果图</button></div>
+    </div>
+    <div class="pane" data-pane="ai" hidden>
+      <div class="versions" id="versions"></div>
+      <div class="mic-wrap">
+        <input id="feedback" placeholder="例如：再窄一点、换玻璃隔板、加一层">
+        <button class="mic" id="mic-fb" title="按一下开始说话" aria-label="语音输入"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+      </div>
+      <div class="chips sm" id="quick"></div>
+      <div class="row end"><button class="primary" id="revise">让 AI 修改</button></div>
+    </div>
+  </div>
+  <div class="dock">
+    <button class="ghost" id="back-need">‹ 需求</button>
+    <p id="scheme-dims" class="dims"></p>
+    <button class="primary" id="choose">就这个了</button>
+  </div>
+</section>
+
+<section id="s-bom" class="card app" hidden>
+  <div id="stage-bom" class="stage-box"></div>
+  <div class="panes">
+    <div class="opt-row"><span>隔板</span><div class="chips sm" id="mats"></div></div>
+    <div class="opt-row"><span>杆色</span><div class="chips sm" id="fins"></div></div>
+    <p class="dims" id="final-dims"></p>
+    <div id="admin-bom" hidden>
+      <p class="label">零件价格表 <span class="hint">（仅管理员可见，单价可直接改）</span></p>
+      <div class="table-wrap"><table id="bom"><thead><tr><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody></tbody></table></div>
+      <p class="total">零件合计 <b id="total">0</b> 元</p>
+      <div class="row end"><button id="csv">导出 CSV</button></div>
+    </div>
+  </div>
+  <div class="dock">
+    <button class="ghost" id="back-design">‹ 方案</button>
+    <p class="dims">预估 <b id="est-mini">—</b></p>
+    <button class="primary" id="to-pay">去结算</button>
+  </div>
+</section>
+
+<section id="s-pay" class="card app pay" hidden>
+  <p class="eyebrow">你的定制方案</p>
+  <h2 id="pay-name">鞋架</h2>
+  <div class="turntable" id="turntable"><span class="tt-hint">拖动 360° 旋转 · 双指或滚轮缩放 · 双击复位</span></div>
+  <div class="panes">
+    <ul class="spec" id="pay-spec"></ul>
+    <div class="price-box">
+      <span>预估价格</span>
+      <b id="est-price">—</b>
+      <small id="est-note">含光轴、连接件、隔板及加工，最终以厂家报价为准</small>
+    </div>
+  </div>
+  <div class="dock">
+    <button class="ghost" id="back-bom">‹ 材质</button>
+    <button class="primary" id="order">支付定金</button>
+  </div>
+</section>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script>
+// 脚本出错时直接显示在页面上（手机上看不到控制台）；模块 404 只在 script 元素上触发 error，所以用捕获阶段
+(function () {
+  function say(m) { var t = document.getElementById('toast'); t.textContent = '页面出错：' + m + '（请截图反馈，或下拉刷新再试）'; t.hidden = false; }
+  addEventListener('error', function (e) { say(e.message || ('加载失败 ' + ((e.target && (e.target.src || e.target.href)) || ''))); }, true);
+  addEventListener('unhandledrejection', function (e) { say(e.reason && e.reason.message || String(e.reason)); });
+  // 用动态 import 加载：Safari 对模块加载/链接错误不触发 window error，这样能拿到具体原因
+  var t0 = Date.now();
+  import('./app.js').then(function () {}, function (e) { say((e && (e.name + ': ' + e.message)) || String(e)); });
+  setTimeout(function () { if (!window.__app) say('脚本 15 秒还没加载完（已等 ' + Math.round((Date.now() - t0) / 1000) + ' 秒），网络慢的话再等等'); }, 15000);
+})();
+</script>
+</body>
+</html>
