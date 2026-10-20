@@ -4,14 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>实景装置合成</title>
-<meta name="theme-color" content="#f5f5f7">
+<meta name="theme-color" content="#f5f5f5">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="bar">
   <b class="brand" id="brand">实景装置合成</b>
-  <span class="bar-r"><span id="mode" class="badge"></span><button id="steps-btn" class="steps-btn" aria-expanded="false" aria-controls="steps"></button></span>
+  <span class="bar-r"><span id="mode" class="badge"></span></span>
 </header>
+<nav class="stepbar" id="stepbar" hidden><button id="steps-btn" class="steps-btn" aria-expanded="false" aria-controls="steps"></button><i class="segs" id="segs"><b></b><b></b><b></b><b></b><b></b></i></nav>
 <ol id="steps" class="steps" hidden><li><button>拍照</button></li><li><button>需求</button></li><li><button>方案</button></li><li><button>材质</button></li><li><button>结算</button></li></ol>
 
 <main>
@@ -46,8 +47,8 @@
     </ul>
   </label>
   <div class="row">
-    <label class="btn primary">📷 拍照<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>
-    <label class="btn">🖼 从相册选<input id="pick" type="file" accept="image/*" multiple hidden></label>
+    <label class="btn primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>拍照<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>
+    <label class="btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>从相册选<input id="pick" type="file" accept="image/*" multiple hidden></label>
   </div>
   <div id="photos" class="photos"></div>
   <div class="row end">
@@ -60,12 +61,13 @@
   <h2>② 说说你的需求</h2>
   <div class="mic-wrap">
     <textarea id="desc" rows="3" placeholder="例如：这是我家门口，缺一个鞋架，平时五六双鞋，最好能随手挂雨伞"></textarea>
-    <button class="mic" id="mic-desc" title="按一下开始说话" aria-label="语音输入"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+    <button class="mic" id="mic-desc" title="按一下开始说话" aria-label="语音输入"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
   </div>
   <p class="hint" id="mic-hint"></p>
   <p class="label">装修风格 <span class="hint">点一下选上</span></p>
   <div class="style-cards" id="styles"></div>
   <div class="row end"><button class="ghost" id="to-design" hidden>回到方案 ›</button><button class="primary" id="gen">生成方案</button></div>
+  <ol class="progress" id="gen-progress" hidden></ol>
 </section>
 
 <section id="s-design" class="card app" hidden>
@@ -105,13 +107,13 @@
       <div class="dial"><span>光照</span><input type="range" id="t-light" min="-180" max="180" step="5"></div>
       <p class="hint" id="light-src"></p>
       <label class="toggle"><input type="checkbox" id="show-shoes" checked> 显示参照鞋 <span class="hint">（男 42 码 29×11cm · 女 37 码 25×9cm，真实尺寸）</span></label>
-      <div class="row tight"><button id="retake">📷 重拍照片</button><button id="snap">保存效果图</button></div>
+      <div class="row tight"><button id="retake">重拍照片</button><button id="snap">保存效果图</button></div>
     </div>
     <div class="pane" data-pane="ai" hidden>
       <div class="versions" id="versions"></div>
       <div class="mic-wrap">
         <input id="feedback" placeholder="例如：再窄一点、换玻璃隔板、加一层">
-        <button class="mic" id="mic-fb" title="按一下开始说话" aria-label="语音输入"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+        <button class="mic" id="mic-fb" title="按一下开始说话" aria-label="语音输入"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
       </div>
       <div class="chips sm" id="quick"></div>
       <div class="row end"><button class="primary" id="revise">让 AI 修改</button></div>
@@ -167,7 +169,7 @@
 // 脚本出错时直接显示在页面上（手机上看不到控制台）；模块 404 只在 script 元素上触发 error，所以用捕获阶段
 (function () {
   function say(m) { var t = document.getElementById('toast'); t.textContent = '页面出错：' + m + '（请截图反馈，或下拉刷新再试）'; t.hidden = false; }
-  addEventListener('error', function (e) { say(e.message || ('加载失败 ' + ((e.target && (e.target.src || e.target.href)) || ''))); }, true);
+  addEventListener('error', function (e) { if (/ResizeObserver loop/.test(e.message)) return; say(e.message || ('加载失败 ' + ((e.target && (e.target.src || e.target.href)) || ''))); }, true);
   addEventListener('unhandledrejection', function (e) { say(e.reason && e.reason.message || String(e.reason)); });
   // 用动态 import 加载：Safari 对模块加载/链接错误不触发 window error，这样能拿到具体原因
   var t0 = Date.now();

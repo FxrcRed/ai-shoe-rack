@@ -130,7 +130,7 @@ export class RackViewer {
   resize() {
     const w = this.stage.clientWidth, h = this.stage.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    this.renderer.setSize(w, h, false); // false：不改画布 CSS 尺寸（CSS 已铺满），否则 ResizeObserver 会循环
     this.applyTransform();
   }
 
@@ -450,7 +450,7 @@ export class Turntable {
   reset() { this.tilt = 0.32; this.zoom = 1; this.vel = 0.006; this.spin.rotation.y = 0.5; this.frame(); }
   resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight; if (!w || !h) return;
-    this.renderer.setSize(w, h); this.camera.aspect = w / h; this.frame(); this.render();
+    this.renderer.setSize(w, h, false); // false：不改画布 CSS 尺寸（CSS 已铺满），否则 ResizeObserver 会循环 this.camera.aspect = w / h; this.frame(); this.render();
   }
   setScheme(s) {
     disposeTree(this.spin); this.spin.clear();

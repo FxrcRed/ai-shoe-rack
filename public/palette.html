@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>色卡</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* 色卡：每列一套配色（浅色 + 深色），色块 + 迷你界面 + 对比度。「当前」一列直接读 style.css 的变量 */
+  body { background: #e9e9ec; color: #1f2023; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 32px 16px 64px; }
+  .wrap > h1 { font-size: var(--fs-title); font-weight: 800; margin: 0 0 4px; }
+  .wrap > p { color: #6b6c72; font-size: var(--fs-aux); margin: 0 0 24px; }
+  .cols { display: grid; grid-template-columns: minmax(0, 420px); gap: 16px; }
+  .col { background: #fff; border-radius: var(--r-xl); padding: 20px; box-shadow: 0 8px 30px rgba(0, 0, 0, .06); }
+  .col h2 { font-size: var(--fs-sub); margin: 0; }
+  .col .mood { font-size: var(--fs-note); color: #6b6c72; margin: 4px 0 14px; min-height: 2.6em; }
+  .sw { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 14px; }
+  .sw div { border-radius: var(--r-sm); height: 46px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); position: relative; }
+  .sw span { position: absolute; left: 6px; bottom: 4px; font-size: 10px; line-height: 1.2; font-family: ui-monospace, monospace; }
+  .demo { border-radius: var(--r-lg); padding: 14px; margin-top: 10px; background: var(--blobs), var(--bg); color: var(--ink); }
+  .demo .card { padding: 16px; }
+  .demo h3 { font-size: var(--fs-sub); font-weight: 800; margin: 0 0 4px; }
+  .demo .hint { margin: 0 0 10px; }
+  .demo .chips { margin-bottom: 10px; }
+  .demo .row { margin-top: 10px; align-items: center; }
+  .demo .price { font-size: var(--fs-title); font-weight: 800; margin-right: auto; }
+  .demo .bad { color: var(--bad); font-size: var(--fs-note); } .demo .ok { color: var(--ok); font-size: var(--fs-note); }
+  .cr { font-size: var(--fs-note); color: #6b6c72; margin-top: 10px; line-height: 1.6; }
+  .cr b { font-weight: 600; color: #1f2023; } .cr .no { color: #b3261e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>鞋架 · 色卡</h1>
+  <p>上面是全部颜色变量，下面是同一套迷你界面的浅色、深色效果。对比度按 WCAG：正文 ≥ 4.5 合格，按钮大字 ≥ 3。</p>
+  <div class="cols" id="cols"></div>
+</div>
+<script type="module">
+// 正式色系直接读 style.css 的变量（浅色读 :root，深色读 data-theme="dark"），改 style.css 这里自动同步
+const P = [{ id: 'now', name: '宜家风（正式）', mood: '白底 + 浅灰块，近黑主按钮，宜家蓝只做选中，黄色只给结算页价签。卡片是平的，玻璃只留在浮层。' }];
+const SW = ['bg', 'card', 'ink', 'muted', 'faint', 'line', 'fill', 'fill2', 'accent', 'navy', 'price-tag', 'ok', 'bad'];
+
+// 「当前」从 style.css 读：浅色读 :root，深色读 data-theme="dark"
+const read = theme => {
+  document.documentElement.setAttribute('data-theme', theme);
+  const cs = getComputedStyle(document.documentElement), o = {};
+  for (const k of [...SW, 'accent-hover', 'accent-ink', 'navy-ink']) o[k] = cs.getPropertyValue('--' + k).trim();
+  o.blobs = cs.getPropertyValue('--blobs').trim();
+  document.documentElement.removeAttribute('data-theme'); return o;
+};
+P[0].L = read('light'); P[0].D = read('dark');
+
+const lum = hex => { const m = hex.replace('#', '').match(/../g).map(x => parseInt(x, 16) / 255).map(c => c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4); return .2126 * m[0] + .7152 * m[1] + .0722 * m[2]; };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); };
+const hexOf = c => { if (c.startsWith('#')) return c.length === 4 ? '#' + [...c.slice(1)].map(x => x + x).join('') : c.slice(0, 7);
+  const m = c.match(/[\d.]+/g).map(Number); return '#' + m.slice(0, 3).map(x => Math.round(x).toString(16).padStart(2, '0')).join(''); };
+const blobs = c => c.blobs || `radial-gradient(42% 30% at 12% 8%, ${c.blob[0]}40, transparent 70%), radial-gradient(48% 34% at 92% 28%, ${c.blob[1]}48, transparent 70%), radial-gradient(55% 38% at 28% 96%, ${c.blob[2]}40, transparent 70%)`;
+const vars = (c, dark) => SW.concat(['accent-hover', 'accent-ink', 'navy-ink']).map(k => `--${k}:${c[k]}`).join(';')
+  + `;--blobs:${blobs(c)};--glass-card:${dark ? 'rgba(30,31,38,.62)' : 'rgba(255,255,255,.62)'};--rim:${dark ? 'inset 0 0 0 1px rgba(255,255,255,.08)' : 'inset 0 0 0 1px rgba(255,255,255,.75), inset 0 1px 0 rgba(255,255,255,.95)'}`;
+
+const demo = (c, dark) => `<div class="demo" style="${vars(c, dark)}">
+  <div class="card"><h3>紧凑两用</h3><p class="hint">宽 80cm 放 3 层，约 9 双鞋</p>
+    <div class="chips sm"><button class="on">实木</button><button>竹</button><button>玻璃</button></div>
+    <input placeholder="说说你的需求" style="font-size:var(--fs-aux);padding:8px 12px">
+    <div class="row"><span class="price"><small class="cur">¥</small>940</span><button class="ghost">‹ 方案</button><button class="primary">去结算</button></div>
+    <div class="row"><span class="price-box" style="margin:0"><b style="font-size:var(--fs-title)"><small class="cur">¥</small>940</b></span><span class="ok">✓ 放得下</span><span class="bad">挡住门了</span></div></div></div>`;
+
+const crLine = c => {
+  const r1 = ratio(hexOf(c.ink), hexOf(c.card)), r2 = ratio(hexOf(c.muted), hexOf(c.card)), r3 = ratio(hexOf(c['accent-ink']), hexOf(c.accent)), r4 = ratio(hexOf(c['navy-ink']), hexOf(c.navy));
+  const f = (n, min) => `<b class="${n < min ? 'no' : ''}">${n.toFixed(1)}</b>`;
+  return `正文 ${f(r1, 4.5)} · 次要字 ${f(r2, 4.5)} · 主按钮 ${f(r3, 3)} · 选中 ${f(r4, 4.5)}`;
+};
+document.getElementById('cols').innerHTML = P.map(p => `<section class="col">
+  <h2>${p.name}</h2><p class="mood">${p.mood}</p>
+  <div class="sw">${SW.map(k => { const v = hexOf(p.L[k]); return `<div style="background:${v}"><span style="color:${lum(v) > .4 ? '#000a' : '#fffc'}">${k}<br>${v}</span></div>`; }).join('')}</div>
+  ${demo(p.L, false)}<div class="cr">浅色：${crLine(p.L)}</div>
+  ${demo(p.D, true)}<div class="cr">深色：${crLine(p.D)}</div>
+</section>`).join('');
+</script>
+</body>
+</html>

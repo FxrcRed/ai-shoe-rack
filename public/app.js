@@ -8,6 +8,7 @@ import { readFocal35, shrink, toScene, hfovOf, LENS_MM, photoQuality, photoLight
 import { detectHorizon } from './vp.js';
 
 const $ = id => document.getElementById(id);
+const yuan = n => '<small class="cur">¥</small>' + n.toLocaleString('zh-CN'); // 宜家标价样式：货币符号缩小
 let viewer, turntable; // ③ 才创建；先声明，避免它之前的代码出错时 show() 里引用到未初始化变量导致按钮全失效
 const S = {
   photo: '', scene: null, placed: false, style: '木地板暖色', mock: true,
@@ -21,7 +22,8 @@ const ORDER = ['s-photo', 's-need', 's-design', 's-bom', 's-pay'];
 const ADMIN = new URLSearchParams(location.search).has('admin');
 // 给客户的预估价 = 零件参考价 × 加工系数 + 固定加工费，取整到 10 元
 const MARKUP = 1.25, LABOR = 50;
-const IN_FRAME = (() => { try { return window.self !== window.top; } catch { return true; } })(); // 在 Artifacts 等 iframe 里
+// 在 Artifacts 等别的网站的 iframe 里（读不到 top 的地址就是跨域）；自己的 phone.html 预览框同源，不算
+const IN_FRAME = (() => { try { return window.self !== window.top && window.top.location.origin !== location.origin; } catch { return true; } })();
 if (IN_FRAME) { $('snap').hidden = true; $('csv').textContent = '复制零件表'; }
 $('admin-bom').hidden = !ADMIN;
 
@@ -29,6 +31,14 @@ function toast(msg, ms = 3500) {
   const t = $('toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms);
 }
+// 报错说人话：接口原文、request id 这些只给 ?admin 看
+const FRIENDLY = [
+  [/^AI 调用失败，已改用模拟方案/, 'AI 暂时不可用，先用示例方案给你看效果'],
+  [/^AI 调用失败，已按关键词模拟修改/, 'AI 暂时不可用，已按你的描述做了简单修改'],
+  [/^AI 识图失败/, '照片没能识别清楚，先按常见角度摆放，可以手动拖动调整'],
+  [/^AI 摆放检查失败/, 'AI 没能复查摆放位置，可以手动拖动调整'],
+];
+function oops(msg, detail) { toast(ADMIN && detail ? `${msg}（${detail}）` : msg, 6000); }
 function show(id) {
   document.querySelectorAll('main > section').forEach(s => s.hidden = s.id !== id);
   S.page = id;
@@ -48,14 +58,16 @@ document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => show(b.dat
 function canGo(k) { return k <= 1 || k <= 3 && S.schemes.length > 0 || k === 4 && !!S.final; }
 function renderSteps() {
   const k = ORDER.indexOf(S.page);
-  $('steps-btn').textContent = k >= 0 ? `${k + 1}/5 ${$('steps').children[k].textContent}` : '流程';
+  $('stepbar').hidden = k < 0;
+  $('steps-btn').textContent = k >= 0 ? `${k + 1}/5 ${$('steps').children[k].textContent}` : '';
+  [...$('segs').children].forEach((b, i) => b.className = i <= k ? 'on' : '');
   [...$('steps').children].forEach((li, i) => {
     li.className = i === k ? 'on' : k >= 0 && (i < k || canGo(i) && i > 1) ? 'done' : '';
     li.firstChild.disabled = i === k || !canGo(i);
   });
 }
 [...$('steps').children].forEach((li, i) => li.firstChild.onclick = () => { openSteps(false); goStep(i); });
-// 步骤条平时收起，右上按钮点开
+// 步骤菜单平时收起，点步骤条左边的「2/5 需求」展开
 function openSteps(on) { $('steps').hidden = !on; $('steps-btn').setAttribute('aria-expanded', on); }
 $('steps-btn').onclick = e => { e.stopPropagation(); openSteps($('steps').hidden); };
 document.addEventListener('click', e => { if (!$('steps').hidden && !$('steps').contains(e.target)) openSteps(false); });
@@ -68,11 +80,14 @@ function goStep(i) {
 }
 $('brand').onclick = () => show('s-home');
 
-function chips(el, list, cur, onPick) {
-  el.innerHTML = '';
+const rgba = (n, a = 1) => `rgba(${n >> 16}, ${n >> 8 & 255}, ${n & 255}, ${a})`;
+// dot(v) 给出颜色时每个选项前加色点（材质/杆色），这一行改成横向滑动不换行
+function chips(el, list, cur, onPick, dot) {
+  el.innerHTML = ''; el.classList.toggle('swatch', !!dot);
   for (const v of list) {
     const b = document.createElement('button');
-    b.textContent = v; b.className = v === cur ? 'on' : '';
+    if (dot) b.innerHTML = `<i class="dot" style="background:${dot(v)}"></i>${v}`; else b.textContent = v;
+    b.className = v === cur ? 'on' : '';
     b.onclick = () => { [...el.children].forEach(c => c.className = ''); b.className = 'on'; onPick(v); };
     el.appendChild(b);
   }
@@ -89,7 +104,7 @@ async function post(url, body) {
     j = await r.json();
   } catch { S.offline = true; return post(url, body); } // 静态托管返回的不是 JSON
   if (!r.ok) throw new Error(j.error || r.status);
-  if (j.warning) toast(j.warning, 6000);
+  if (j.warning) { const f = FRIENDLY.find(([re]) => re.test(j.warning)); oops(f ? f[1] : j.warning.split('：')[0], j.warning); }
   return j;
 }
 
@@ -101,6 +116,10 @@ fetch('api/status').then(r => r.json()).then(j => {
 }).catch(() => { S.offline = true; $('mode').textContent = '模拟模式（离线）'; });
 
 // ---------- 语音 ----------
+// 录音时麦克风形变成停止方块（morphicons，按需加载；加载失败就保持原图标，只靠变红提示）
+const MIC_D = 'M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21'; // 和 index.html 里的 path 一致
+const STOP_D = 'M9 7h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z';
+let morphLib;
 function bindMic(btn, target) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR || !isSecureContext || IN_FRAME) {
@@ -108,15 +127,21 @@ function bindMic(btn, target) {
     $('mic-hint').textContent = IN_FRAME ? '嵌入页里不能用麦克风，请直接打字。' : !SR ? '这个浏览器不支持语音输入，请直接打字。' : '语音输入需要 https 或 localhost，请直接打字。';
     return;
   }
-  let rec = null;
+  let rec = null, morph = null;
+  (morphLib ||= import('./vendor/morphicons/dom.js').catch(() => null))
+    .then(L => { if (L) morph = L.createMorph(btn.querySelector('path'), MIC_D); });
+  const recording = on => {
+    btn.classList.toggle('rec', on); btn.title = on ? '按一下停止' : '按一下开始说话';
+    morph?.morphTo(on ? STOP_D : MIC_D);
+  };
   btn.onclick = () => {
     if (rec) return rec.stop();
     rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true;
     const base = target.value ? target.value + '，' : '';
     rec.onresult = e => { target.value = base + [...e.results].map(r => r[0].transcript).join(''); };
-    rec.onerror = e => toast('语音识别出错：' + e.error);
-    rec.onend = () => { rec = null; btn.classList.remove('rec'); };
-    rec.start(); btn.classList.add('rec');
+    rec.onerror = e => oops(e.error === 'not-allowed' ? '没有麦克风权限，请在浏览器里允许，或直接打字' : e.error === 'network' ? '语音服务连不上，请直接打字' : '语音识别出错，请直接打字', e.error);
+    rec.onend = () => { rec = null; recording(false); };
+    rec.start(); recording(true);
   };
 }
 bindMic($('mic-desc'), $('desc'));
@@ -157,7 +182,7 @@ function renderPhotos() {
     d.innerHTML = `<img src="${p.url}" alt=""><button class="x" title="删除">✕</button>
       <div class="q ${bad ? 'bad' : S.analyzing ? 'wait' : 'ok'}">${bad ? '⚠ ' + p.q.msg : S.analyzing ? '分析中…' : '✓ ' + p.q.msg + (S.best === i && S.photos.length > 1 ? '（用这张）' : '')}</div>`
       + (p.ai && !S.analyzing ? `<div class="q wait">AI 建议：${p.ai.replace(/[<>&]/g, c => `&#${c.charCodeAt(0)};`)}</div>` : '');
-    if (bad) { const r = document.createElement('button'); r.className = 'redo'; r.textContent = '📷 重拍这张'; r.onclick = () => retake(i); d.appendChild(r); }
+    if (bad) { const r = document.createElement('button'); r.className = 'redo'; r.textContent = '重拍这张'; r.onclick = () => retake(i); d.appendChild(r); }
     d.querySelector('.x').onclick = () => removePhoto(i);
     box.appendChild(d);
   });
@@ -182,7 +207,7 @@ async function analyze(seq) {
   try {
     const j = await post('api/scene', { photos: ph.map(p => ({ image: shrink(p.img), aspect: p.aspect, horizonY: p.geo?.horizonY })), need: $('desc').value });
     ai = j.scene;
-  } catch (e) { toast('照片分析失败：' + e.message); }
+  } catch (e) { oops('照片分析失败，先按常见角度摆放，可以手动拖动调整', e.message); }
   if (seq !== S.seq) return null; // 期间照片又变了，以新的为准
   // 用哪张：AI 选的那张透视可用就用它，否则用几何最可靠的一张（AI 的墙脚点只对它选的那张有效）
   const geoBest = ph.reduce((b, p, i) => p.q.score > ph[b].q.score ? i : b, 0);
@@ -282,18 +307,31 @@ for (const v of STYLES) {
 }
 const cons = () => ({ maxWidth: undefined, maxDepth: undefined, maxHeight: undefined }); // ② 已去掉可用尺寸输入
 
+// 生成时分步显示进度：真 AI 要 10~30 秒，只改按钮上的字像卡住了。照片分析从上传就开始了，和生成方案并行
+function progress(labels) {
+  const el = $('gen-progress'), t0 = Date.now();
+  el.innerHTML = labels.map(l => `<li>${l}</li>`).join(''); el.hidden = false;
+  const li = [...el.children];
+  const tick = setInterval(() => li.forEach(x => { if (x.className === 'doing') x.dataset.sec = Math.round((Date.now() - t0) / 1000) + ' 秒'; }), 1000);
+  return { doing: i => li[i].className = 'doing', done: i => { li[i].className = 'done'; delete li[i].dataset.sec; }, close: () => { clearInterval(tick); el.hidden = true; } };
+}
 $('gen').onclick = async () => {
-  const btn = $('gen'); btn.disabled = true; btn.textContent = S.mock ? '生成中…' : 'AI 思考中（约 10~30 秒）…';
+  const btn = $('gen'); btn.disabled = true; btn.textContent = '生成中…';
+  const photo = !S.placed && !!S.scene; // 有照片且还没摆过：要等照片分析
+  const p = progress([...(photo ? ['看懂照片：透视、墙面、门'] : []), '设计 3 个方案', S.photos.length ? '摆进你的照片里' : '摆进示例场景里']);
+  const [iPhoto, iGen, iPut] = photo ? [0, 1, 2] : [-1, 0, 1];
   try {
+    if (photo) { p.doing(iPhoto); S.scene.then(() => p.done(iPhoto)); }
+    p.doing(iGen);
     const j = await post('api/generate', { description: $('desc').value, style: S.style, ...cons() });
+    p.done(iGen); p.doing(iPut);
     S.schemes = j.schemes.map(s => ({ versions: [s], cur: 0 }));
     S.active = 0;
-    if (!S.placed) btn.textContent = 'AI 正在分析照片透视…';
     const scene = S.placed ? null : await (S.scene || toScene(null, { aspect: 0.75 }));
     show('s-design'); renderDesign();
     placeScene(scene);
-  } catch (e) { toast('生成失败：' + e.message); }
-  btn.disabled = false; btn.textContent = S.schemes.length ? '重新生成方案' : '生成方案';
+  } catch (e) { oops('生成失败了，请稍后再试一次', e.message); }
+  p.close(); btn.disabled = false; btn.textContent = S.schemes.length ? '重新生成方案' : '生成方案';
 };
 
 // ---------- ③ 方案 / 修改 ----------
@@ -476,7 +514,7 @@ $('revise').onclick = async () => {
     e.versions.push(j.scheme); e.cur = e.versions.length - 1;
     $('feedback').value = ''; [...$('quick').children].forEach(c => c.className = '');
     renderDesign();
-  } catch (e) { toast('修改失败：' + e.message); }
+  } catch (e) { oops('修改失败了，请稍后再试一次', e.message); }
   btn.disabled = false; btn.textContent = '修改';
 };
 
@@ -485,8 +523,8 @@ $('choose').onclick = () => choose();
 function choose() {
   S.final = { ...current() };
   show('s-bom');
-  chips($('mats'), Object.keys(BOARD_MATERIALS), S.final.shelfMaterial, v => { S.final.shelfMaterial = v; renderBOM(); });
-  chips($('fins'), Object.keys(ROD_FINISHES), S.final.rodFinish, v => { S.final.rodFinish = v; renderBOM(); });
+  chips($('mats'), Object.keys(BOARD_MATERIALS), S.final.shelfMaterial, v => { S.final.shelfMaterial = v; renderBOM(); }, v => rgba(BOARD_MATERIALS[v].color, Math.max(.5, BOARD_MATERIALS[v].opacity)));
+  chips($('fins'), Object.keys(ROD_FINISHES), S.final.rodFinish, v => { S.final.rodFinish = v; renderBOM(); }, v => rgba(ROD_FINISHES[v]));
   renderBOM();
 }
 $('back-design').onclick = () => { show('s-design'); renderDesign(); };
@@ -504,7 +542,7 @@ function toPay() {
     ['可放鞋', `约 ${l.male + l.female} 双`], ['隔板', s.shelfMaterial],
     ['杆件', `Φ${s.rodDiameter}mm ${s.rodFinish}`], ['配件', [s.hooks ? `挂钩 ×${s.hooks}` : '', s.umbrella ? '挂伞杆' : ''].filter(Boolean).join('、') || '无'],
   ].map(([k, v]) => `<li><span>${k}</span>${v}</li>`).join('');
-  $('est-price').textContent = '¥' + estimate().toLocaleString('zh-CN');
+  $('est-price').innerHTML = yuan(estimate());
   $('order').textContent = `付定金 ¥${Math.ceil(estimate() * 0.3 / 10) * 10}`;
   show('s-pay');
   turntable.reset(); turntable.setScheme(s);
@@ -527,7 +565,7 @@ function renderBOM() {
   updateTotal();
 }
 function updateTotal() {
-  $('est-mini').textContent = '¥' + estimate().toLocaleString('zh-CN');
+  $('est-mini').innerHTML = yuan(estimate());
   let t = 0;
   [...$('bom').tBodies[0].rows].forEach((tr, i) => {
     const sub = S.rows[i].qty * S.rows[i].price; t += sub;
