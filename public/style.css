@@ -10,7 +10,7 @@
   --fill: #f5f5f5; --fill2: #ebebeb; --accent: #111111; --accent-hover: #333333; --accent-ink: #fff;
   --navy: #0058a3; --navy-ink: #fff; /* 宜家蓝：选中的胶囊/分段、滑块、勾选（变量名沿用 navy） */
   --price-tag: #ffdb00; --price-ink: #111111; /* 宜家黄：只给结算页价签 */
-  --ok: #0a8a00; --bad: #e00751; --bar: rgba(255, 255, 255, .78);
+  --ok: #0a8a00; --ok-ink: #067000; --bad: #e00751; --bar: rgba(255, 255, 255, .78);
   --shadow: 0 1px 3px rgba(17, 17, 17, .05); --glow: none;
   /* 圆角从手机屏幕往里同心递减（里层 = 外层 − 间距）：屏幕约 48 − 卡片离屏幕 s4(16) = 卡片 xl 32；
      xl 32 − 应用页卡片内边距 s3(12) = 舞台/转盘 lg 20；输入框/小卡片 md 12；里面的小件 sm 8；按钮胶囊 pill */
@@ -26,14 +26,14 @@
   :root:not([data-theme="light"]) {
     --bg: #0e0e0e; --card: #1c1c1c; --ink: #f5f5f5; --muted: #bbbbbb; --faint: #8c8c8c; --line: #333333;
     --fill: #242424; --fill2: #2e2e2e; --accent: #f5f5f5; --accent-hover: #dfdfdf; --accent-ink: #111111;
-    --navy: #4d9de0; --navy-ink: #0e0e0e; --ok: #3fb950; --bad: #ff4d7d; --bar: rgba(14, 14, 14, .78);
+    --navy: #4d9de0; --navy-ink: #0e0e0e; --ok: #3fb950; --ok-ink: #3fb950; --bad: #ff4d7d; --bar: rgba(14, 14, 14, .78);
     --shadow: none; --glass-float: rgba(28, 28, 28, .72); --rim: inset 0 0 0 1px rgba(255, 255, 255, .08);
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e0e0e; --card: #1c1c1c; --ink: #f5f5f5; --muted: #bbbbbb; --faint: #8c8c8c; --line: #333333;
   --fill: #242424; --fill2: #2e2e2e; --accent: #f5f5f5; --accent-hover: #dfdfdf; --accent-ink: #111111;
-  --navy: #4d9de0; --navy-ink: #0e0e0e; --ok: #3fb950; --bad: #ff4d7d; --bar: rgba(14, 14, 14, .78);
+  --navy: #4d9de0; --navy-ink: #0e0e0e; --ok: #3fb950; --ok-ink: #3fb950; --bad: #ff4d7d; --bar: rgba(14, 14, 14, .78);
   --shadow: none; --glass-float: rgba(28, 28, 28, .72); --rim: inset 0 0 0 1px rgba(255, 255, 255, .08);
 }
 * { box-sizing: border-box; }
@@ -56,7 +56,7 @@ main { max-width: 680px; margin: 0 auto; padding: var(--s4) var(--s4) var(--s6);
 }
 .brand { font-size: var(--fs-sub); font-weight: 800; letter-spacing: -.02em; }
 .badge { font-size: var(--fs-note); padding: var(--s1) var(--s3); border-radius: var(--r-pill); background: var(--fill2); color: var(--muted); }
-.badge.live { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.badge.live { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok-ink); }
 
 /* 步骤：细进度条，可点击跳回已走过的步骤 */
 /* 平时收起成右上按钮，点开是下拉面板 */
@@ -86,13 +86,9 @@ h2 { font-size: var(--fs-title); line-height: 1.25; font-weight: 800; letter-spa
 /* 首页 */
 /* 首页：一屏内上下左右居中 */
 .hero { text-align: center; padding: var(--s6) var(--s5); min-height: calc(100vh - var(--chrome)); min-height: calc(100dvh - var(--chrome)); display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; }
-.hero .feats { width: 100%; }
 .eyebrow { margin: 0 0 var(--s2); font-size: var(--fs-aux); font-weight: 600; color: var(--navy); }
-.hero h1 { font-size: var(--fs-display); line-height: 1.07; font-weight: 800; letter-spacing: -.035em; margin: 0 0 var(--s4); }
-.lead { color: var(--muted); font-size: var(--fs-sub); line-height: 1.42; margin: 0 auto var(--s5); max-width: 30em; }
-.feats { list-style: none; padding: var(--s5) 0 0; margin: var(--s6) 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); border-top: 1px solid var(--fill2); }
-.feats b { display: block; font-size: var(--fs-aux); }
-.feats span { display: block; font-size: var(--fs-note); color: var(--muted); margin-top: var(--s1); }
+.hero h1 { font-size: var(--fs-display); line-height: 1.07; font-weight: 800; letter-spacing: -.035em; margin: 0 0 var(--s4); text-wrap: balance; }
+.lead { color: var(--muted); font-size: var(--fs-sub); line-height: 1.42; margin: 0 auto var(--s5); max-width: 30em; text-wrap: pretty; }
 
 /* 按钮：胶囊 */
 .row { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s4); }

@@ -1,0 +1,40 @@
+<!doctype html><meta charset="utf-8"><title>手机预览（iPhone 17 Pro）</title>
+<style>
+html,body{height:100%;margin:0;background:#4a2f1c;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1800px;height:1348px;background:url(_ref.webp) 0 0/1800px 1348px;transform-origin:0 0}
+#scr{position:absolute;left:0;top:0;width:402px;height:874px;transform-origin:0 0;border-radius:62px;overflow:hidden;background:#2060c8}
+#scr iframe{position:absolute;left:0;top:54px;width:402px;height:820px;border:0;display:block}
+.sb{position:absolute;top:0;left:0;right:0;height:54px;display:flex;justify-content:space-between;align-items:center;padding:8px 34px 0 44px;box-sizing:border-box;font:600 17px -apple-system,system-ui,sans-serif;color:#fff;pointer-events:none;z-index:2}
+.sb .r{display:flex;gap:6px;align-items:center}
+.island{position:absolute;top:11px;left:50%;translate:-50% 0;width:124px;height:36px;background:#000;border-radius:20px;z-index:3;pointer-events:none}
+.hi{position:absolute;bottom:8px;left:50%;translate:-50% 0;width:140px;height:5px;border-radius:3px;background:#fff;opacity:.9;z-index:2;pointer-events:none}
+.gl{position:absolute;inset:0;z-index:4;pointer-events:none;background:linear-gradient(120deg,rgba(255,255,255,.14),rgba(255,255,255,0) 35%,rgba(0,0,0,.12))}
+</style>
+<div id="stage"><div id="scr">
+ <iframe></iframe>
+ <div class="island"></div>
+ <div class="sb"><span>9:41</span><span class="r">
+  <svg width="19" height="12" viewBox="0 0 19 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+  <svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M1.5 4.2a10 10 0 0 1 14 0M4 7a6.5 6.5 0 0 1 9 0"/><circle cx="8.5" cy="10" r="1.2" fill="#fff" stroke="none"/></svg>
+  <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="2" width="20" height="9" rx="2" fill="#fff"/><rect x="25" y="4.5" width="1.6" height="4" rx=".8" fill="#fff" opacity=".5"/></svg></span></div>
+ <div class="hi"></div><div class="gl"></div>
+</div></div>
+<script>
+/* 手机屏幕四个角在 _ref.webp 里的位置（像素）：左上、右上、右下、左下；可用 ?q=x,y,... 微调 */
+let Q=[953,385,1258,544,791,1082,478,902];
+const qp=new URLSearchParams(location.search).get('q');if(qp)Q=qp.split(',').map(Number);
+function homography(w,h,q){ // 把 (0,0)(w,0)(w,h)(0,h) 映射到 q，返回 matrix3d
+ const s=[[0,0],[w,0],[w,h],[0,h]],A=[],b=[];
+ for(let i=0;i<4;i++){const[x,y]=s[i],X=q[2*i],Y=q[2*i+1];A.push([x,y,1,0,0,0,-x*X,-y*X]);b.push(X);A.push([0,0,0,x,y,1,-x*Y,-y*Y]);b.push(Y)}
+ for(let i=0;i<8;i++){let m=i;for(let r=i+1;r<8;r++)if(Math.abs(A[r][i])>Math.abs(A[m][i]))m=r;[A[i],A[m]]=[A[m],A[i]];[b[i],b[m]]=[b[m],b[i]];
+  for(let r=0;r<8;r++)if(r!==i){const f=A[r][i]/A[i][i];for(let c=i;c<8;c++)A[r][c]-=f*A[i][c];b[r]-=f*b[i]}}
+ const[a,bb,c,d,e,f,g,hh]=b.map((v,i)=>v/A[i][i]);
+ return `matrix3d(${a},${d},0,${g},${bb},${e},0,${hh},0,0,1,0,${c},${f},0,1)`}
+if(new URLSearchParams(location.search).get('d')){const sv=document.createElementNS('http://www.w3.org/2000/svg','svg');sv.setAttribute('style','position:absolute;left:0;top:0;width:1800px;height:1348px;pointer-events:none;z-index:9');sv.innerHTML=`<polygon points="${Q.join(' ')}" fill="none" stroke="red" stroke-width="3"/>`;document.getElementById('stage').appendChild(sv)}
+document.getElementById('scr').style.transform=homography(402,874,Q);
+const st=document.getElementById('stage');
+const ZM=new URLSearchParams(location.search).get('z');
+function fit(){if(ZM){const k=innerWidth/(+ZM);st.style.transform=`translate(${-875*k}px,${-750*k}px) scale(${k})`;return}const k=Math.min(innerWidth/1800,innerHeight/1348);st.style.transform=`translate(${-900*k}px,${-674*k}px) scale(${k})`}fit();onresize=fit;
+document.querySelector('iframe').src='index.html';
+document.querySelector('iframe').onload=e=>{const d=e.target.contentDocument,s=d.createElement('style');s.textContent='html{scrollbar-width:none}::-webkit-scrollbar{display:none}';d.head.appendChild(s)};
+</script>

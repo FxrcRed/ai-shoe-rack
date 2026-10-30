@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>手机联动预览</title>
+<style>
+html,body{height:100%;margin:0;overflow:hidden;background:#4a2f1c;font-family:-apple-system,system-ui,sans-serif}
+#L,#R{position:absolute;top:0;bottom:0;overflow:hidden}
+#L{left:0;width:50%;background:repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,transparent 1px 24px),repeating-linear-gradient(90deg,rgba(255,255,255,.07) 0 1px,transparent 1px 24px),#2060c8}
+#R{left:50%;right:0}
+#W{position:absolute;left:50%;top:50%;width:402px;height:874px;transform-origin:0 0}
+.phf{position:absolute;inset:-20px;border:2px solid #fff;border-radius:82px;box-sizing:border-box}
+.phf i{position:absolute;width:3px;background:#fff;border-radius:2px}
+.phs{position:absolute;inset:0;border:1px solid rgba(255,255,255,.85);border-radius:62px;box-sizing:border-box;pointer-events:none;z-index:5}
+.scr{position:absolute;left:0;top:0;width:402px;height:874px;border-radius:62px;overflow:hidden;background:#2060c8}
+.scr iframe{position:absolute;left:0;top:54px;width:402px;height:720px;border:0;display:block;background:#f5f5f5}
+.sb{position:absolute;top:0;left:0;right:0;height:54px;display:flex;justify-content:space-between;align-items:center;padding:8px 34px 0 44px;box-sizing:border-box;font:600 17px -apple-system,system-ui,sans-serif;color:#fff;pointer-events:none;z-index:2}
+.sb .r{display:flex;gap:6px;align-items:center}
+.island{position:absolute;top:11px;left:50%;translate:-50% 0;width:124px;height:36px;box-sizing:border-box;border-radius:20px;z-index:3;pointer-events:none}
+.wire .island{border:1px solid rgba(255,255,255,.85)}
+.photo .island{background:#000}
+.photo .island svg{display:none}
+.island svg{position:absolute;left:-1px;top:-1px;width:124px;height:36px;fill:none;stroke:rgba(255,255,255,.85)}
+.sf{position:absolute;left:0;right:0;top:774px;height:100px;color:#fff;font-size:15px;z-index:2;pointer-events:none}
+.sf>div{position:absolute;top:12px;height:56px;box-sizing:border-box;border:1px solid rgba(255,255,255,.85);border-radius:28px;display:flex;align-items:center;justify-content:space-around}
+.sf .nv{left:34px;width:83px}.sf .url{left:126px;width:184px;gap:8px;padding:0 14px;justify-content:center}.sf .mo{left:321px;width:48px}
+.hi{position:absolute;bottom:8px;left:50%;translate:-50% 0;width:140px;height:5px;border-radius:3px;background:#fff;opacity:.9;z-index:2;pointer-events:none}
+.gl{position:absolute;inset:0;z-index:4;pointer-events:none;background:linear-gradient(120deg,rgba(255,255,255,.14),rgba(255,255,255,0) 35%,rgba(0,0,0,.12))}
+.photo.scr{box-shadow:0 0 0 3px #050505}
+#stage{position:absolute;left:50%;top:50%;width:1800px;height:1348px;background:url(_ref.webp) 0 0/1800px 1348px;transform-origin:0 0}
+#stage .scr{transform-origin:0 0}
+</style>
+<div id="L"><div id="W"><div class="phf"><i style="left:-6px;top:12.4%;height:3.1%"></i><i style="left:-6px;top:18.8%;height:6%"></i><i style="left:-6px;top:26.6%;height:6%"></i><i style="right:-6px;top:22.2%;height:9.3%"></i></div><div class="scr wire" id="sw"></div><div class="phs"></div></div></div>
+<div id="R"><div id="stage"><div class="scr photo" id="sp"></div></div></div>
+<script>
+const CH=`<iframe></iframe><div class="island"><svg viewBox="0 0 124 36"><circle cx="104" cy="18" r="8"/></svg></div>
+<div class="sb"><span class="clk"></span><span class="r"><svg width="19" height="12" viewBox="0 0 19 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M1.5 4.2a10 10 0 0 1 14 0M4 7a6.5 6.5 0 0 1 9 0"/><circle cx="8.5" cy="10" r="1.2" fill="#fff" stroke="none"/></svg><svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="2" width="20" height="9" rx="2" fill="#fff"/><rect x="25" y="4.5" width="1.6" height="4" rx=".8" fill="#fff" opacity=".5"/></svg></span></div>
+<div class="sf"><div class="nv"><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 8 8-8 8"/></svg></div><div class="url"><svg width="20" height="18" viewBox="0 0 20 18" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><rect x="2" y="1" width="16" height="11" rx="2"/><path d="M2 15h16"/></svg><span>localhost</span></div><div class="mo"><svg width="22" height="6" viewBox="0 0 22 6" fill="#fff"><circle cx="3" cy="3" r="2.4"/><circle cx="11" cy="3" r="2.4"/><circle cx="19" cy="3" r="2.4"/></svg></div></div>
+<div class="hi"></div>`;
+sw.innerHTML=CH;sp.innerHTML=CH+'<div class="gl"></div>';
+const hm=()=>new Intl.DateTimeFormat([],{hour:'numeric',minute:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='dayPeriod').map(x=>x.value.trim()).join('');
+const tick=()=>document.querySelectorAll('.clk').forEach(e=>e.textContent=hm());tick();setInterval(tick,1000);
+let Q=[953,385,1258,544,791,1082,478,902];
+const qp=new URLSearchParams(location.search).get('q');if(qp)Q=qp.split(',').map(Number);
+function homography(w,h,q){ // 把 (0,0)(w,0)(w,h)(0,h) 映射到 q，返回 matrix3d
+ const s=[[0,0],[w,0],[w,h],[0,h]],A=[],b=[];
+ for(let i=0;i<4;i++){const[x,y]=s[i],X=q[2*i],Y=q[2*i+1];A.push([x,y,1,0,0,0,-x*X,-y*X]);b.push(X);A.push([0,0,0,x,y,1,-x*Y,-y*Y]);b.push(Y)}
+ for(let i=0;i<8;i++){let m=i;for(let r=i+1;r<8;r++)if(Math.abs(A[r][i])>Math.abs(A[m][i]))m=r;[A[i],A[m]]=[A[m],A[i]];[b[i],b[m]]=[b[m],b[i]];
+  for(let r=0;r<8;r++)if(r!==i){const f=A[r][i]/A[i][i];for(let c=i;c<8;c++)A[r][c]-=f*A[i][c];b[r]-=f*b[i]}}
+ const[a,bb,c,d,e,f,g,hh]=b.map((v,i)=>v/A[i][i]);
+ return `matrix3d(${a},${d},0,${g},${bb},${e},0,${hh},0,0,1,0,${c},${f},0,1)`}
+if(new URLSearchParams(location.search).get('d')){const sv=document.createElementNS('http://www.w3.org/2000/svg','svg');sv.setAttribute('style','position:absolute;left:0;top:0;width:1800px;height:1348px;pointer-events:none;z-index:9');sv.innerHTML=`<polygon points="${Q.join(' ')}" fill="none" stroke="red" stroke-width="3"/>`;document.getElementById('stage').appendChild(sv)}
+
+sp.style.transform=homography(402,874,Q);
+const W=document.getElementById('W'),st=document.getElementById('stage'),R=document.getElementById('R'),Lp=document.getElementById('L');
+function fit(){let k=Math.min(Lp.clientWidth/502,Lp.clientHeight/954);W.style.transform=`translate(${-201*k}px,${-437*k}px) scale(${k})`;
+ k=Math.min(Math.max(R.clientWidth/1800,R.clientHeight/1348),R.clientWidth/900);st.style.transform=`translate(${-900*k}px,${-674*k}px) scale(${k})`}fit();onresize=fit;
+/* 两个手机同一份页面，操作一边、另一边照做：点击、输入、选照片、滚动、拖动 */
+const F=[...document.querySelectorAll('iframe')];
+const path=e=>{const p=[];while(e&&e.parentElement){p.unshift([...e.parentElement.children].indexOf(e));e=e.parentElement}return p};
+const find=(d,p)=>{let e=d.documentElement;for(const i of p)e=e&&e.children[i];return e};
+function wire(a,b){const A=a.contentDocument,tg=e=>e.target.nodeType===9?A.documentElement:e.target;
+ const other=e=>find(b.contentDocument,path(tg(e)));
+ const hook=(t,fn)=>A.addEventListener(t,e=>{if(!e.isTrusted)return;try{fn(e)}catch(x){}},true);
+ hook('click',e=>{const t=tg(e);if(t.closest('input[type=file]')||t.closest('label'))return;other(e)?.click()});
+ const val=e=>{const o=other(e),t=e.target;if(!o)return;if(t.type==='file'){const dt=new b.contentWindow.DataTransfer();[...t.files].forEach(f=>dt.items.add(f));o.files=dt.files}else if(t.type==='checkbox'||t.type==='radio')o.checked=t.checked;else o.value=t.value;o.dispatchEvent(new b.contentWindow.Event(e.type,{bubbles:true}))};
+ hook('input',val);hook('change',val);
+ hook('scroll',e=>{const t=tg(e),o=other(e);if(o&&Math.abs(o.scrollTop-t.scrollTop)>1)o.scrollTop=t.scrollTop;if(o&&Math.abs(o.scrollLeft-t.scrollLeft)>1)o.scrollLeft=t.scrollLeft});
+ for(const t of ['pointerdown','pointermove','pointerup','pointercancel'])hook(t,e=>{if(t==='pointermove'&&!e.buttons)return;const o=other(e);o&&o.dispatchEvent(new b.contentWindow.PointerEvent(t,{bubbles:true,cancelable:true,clientX:e.clientX,clientY:e.clientY,pointerId:e.pointerId,pointerType:e.pointerType,isPrimary:true,buttons:e.buttons,button:e.button}))})}
+let ready=0;F.forEach(f=>{f.onload=()=>{const d=f.contentDocument,s=d.createElement('style');s.textContent='html{scrollbar-width:none}::-webkit-scrollbar{display:none}';d.head.appendChild(s);if(++ready===2){wire(F[0],F[1]);wire(F[1],F[0])}};f.src='index.html'});
+</script>
