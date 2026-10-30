@@ -147,12 +147,12 @@ export function photoQuality(img, geo) {
   const d = g.getImageData(0, 0, 32, 32).data; let luma = 0;
   for (let i = 0; i < d.length; i += 4) luma += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
   luma /= 1024;
-  if (luma < 45) return { ok: false, msg: '太暗了，开灯再拍', score: 0 };
-  if (!geo) return { ok: false, msg: '没找到地面和墙脚的直线，对着墙角、带上地面重拍', score: 0 };
-  if (geo.horizonY > 0.8) return { ok: false, msg: '地面拍得太少，手机再往下倾一点', score: 0 };
-  if (geo.nSeg < 12 || geo.strength < 1.5) return { ok: false, msg: '线条太少或太模糊，换个角度重拍', score: geo.strength };
-  if (geo.src === 'one-horizontal') return { ok: true, msg: '可以用，透视线条偏少', score: geo.strength * 0.7 };
-  return { ok: true, msg: '透视清楚', score: geo.strength };
+  if (luma < 45) return { ok: false, level: 'bad', msg: '太暗了，开灯再拍', score: 0 };
+  if (!geo) return { ok: false, level: 'warn', msg: '没找到地面和墙脚的直线，建议对着墙角、带上地面重拍', score: 0 };
+  if (geo.horizonY > 0.8) return { ok: false, level: 'warn', msg: '地面拍得太少，建议手机再往下倾一点', score: 0 };
+  if (geo.nSeg < 12 || geo.strength < 1.5) return { ok: false, level: 'warn', msg: '线条太少或太模糊，建议换个角度重拍', score: geo.strength };
+  if (geo.src === 'one-horizontal') return { ok: true, level: 'ok', msg: '可以用，透视线条偏少', score: geo.strength * 0.7 };
+  return { ok: true, level: 'ok', msg: '透视清楚', score: geo.strength };
 }
 
 // AI 给的门：门洞底边两端（铰链侧、锁侧，照片 0~1 坐标）+ 开向

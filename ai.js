@@ -24,8 +24,8 @@ export function buildGenerateMessages(req) {
     { role: 'system', content: SYSTEM },
     { role: 'user', content: `用户需求：${req.description || '（未描述）'}
 可用宽度：${req.maxWidth || '不限'} cm；可用深度：${req.maxDepth || '不限'} cm；可用高度：${req.maxHeight || '不限'} cm
-装修风格：${req.style || '未指定'}
-请给出 3 个差异明显的方案（比如紧凑型 / 大容量型 / 带换鞋凳或挂伞型），输出 {"schemes":[{...},{...},{...}]}` },
+${req.avoid?.length ? `不要和这些已给过的方案雷同（换一个思路：不同的层数/宽度/布局）：${req.avoid.join('、')}
+` : ''}只给 1 个最合适的方案，输出 {"schemes":[{...}]}` },
   ];
 }
 
@@ -55,7 +55,8 @@ const SCENE = `你是室内摆放助手。看用户拍的同一个角落（玄�
 - wall: 鞋架背靠哪面墙：left（左侧墙）/ back（正对相机的墙）/ right（右侧墙）。只能选照片里墙脚线清楚可见、旁边地面空地也在画面内（能完整看到鞋架）的墙。鞋架要考虑人的活动：不能放在门扇开关时扫过的扇形地面上（门铰链一侧为圆心、门宽约 0.8~0.9m 为半径），不能挡门洞正前方，要给进门、换鞋留出至少约 0.8m 的过道
 - wallBase: [x, y] 鞋架背面中点贴墙的位置——取这面墙的墙脚线（墙面与地面的交界线、踢脚线最底边）前方紧贴的地面上一点（离墙脚约 5cm 的地面）：点必须落在地面区域内，宁可略偏向地面也不要偏到墙上——点在墙面、门、柜子上会让鞋架嵌进墙里。鞋架宽约 0.6~1m，这个点两侧各 0.5m 的墙脚都要是空地，且远离门的开启范围，不能和 obstacles 里的家具重叠；x 在 0.15~0.85 之间，不要贴画面边缘。靠侧墙时也要给出（程序会把它投到侧墙墙脚线上）
 - light: 主光源方向，用来给鞋架画一致的影子：{"dir": 方向, "hard": 布尔}。dir 是光从哪边照过来（相对拍照的人）：front（从相机身后照向墙）/ back（从画面深处照向相机，如对面窗户）/ left / right / front-left / front-right / back-left / back-right / top（头顶吸顶灯、看不出方向）。先看照片里已有物体（鞋、柜子、门框、人）落在地面/墙上的影子：影子朝向的反方向就是光源；没影子再看窗户和灯的位置。hard = 影子边缘清楚（阳光、射灯），false = 影子模糊或几乎没有（阴天、散射光）
-- note: 一句话说明放在哪、为什么，≤25 字`;
+- note: 一句话说明放在哪、为什么，≤25 字
+- rec: 看照片里地面、墙面、家具的颜色和风格，推荐一套能生产的搭配，{"style": 房间风格≤8字（如「浅色木地板」「白墙现代」）, "shelfMaterial": 只能是 实木/竹/玻璃/金属板/亚克力 之一, "rodFinish": 只能是 银色铝/黑色/白色/金色 之一}`;
 
 // 摆放复查：把虚拟鞋架合成到照片上，让 AI 看效果判断是否落地、挡门、挡过道，不行就给新的墙脚点
 const CHECK = `你是室内摆放审核员。图 A 是用户拍的玄关/门口原照片，图 B 是程序把一个虚拟光轴鞋架（金属杆 + 隔板，地上带阴影）按计算的位置合成上去的效果。两张图坐标一致，都叠了洋红色 0.1 坐标网格（左上角 0,0）。
@@ -138,6 +139,7 @@ export function mergeScenes(runs) {
   return {
     ...S[0], best, wall, wallBase: medPt(W.map(r => r.wallBase)), cameraHeight: med(S.map(r => r.cameraHeight)),
     doorTop: top && bottom ? top : null, doorBottom: top && bottom ? bottom : null, door, corner, obstacles,
-    lens: mode(S.map(r => r.lens)), note: (W[0] || S[0]).note, votes: `${W.length}/${runs.length}`,
+    lens: mode(S.map(r => r.lens)),
+    rec: S[0].rec && { style: S[0].rec.style, shelfMaterial: mode(S.map(r => r.rec?.shelfMaterial)), rodFinish: mode(S.map(r => r.rec?.rodFinish)) }, note: (W[0] || S[0]).note, votes: `${W.length}/${runs.length}`,
   };
 }

@@ -1,30 +1,28 @@
-// app.js — 页面流程：主页 → 拍照 → 需求 → 方案/修改 → 材质与零件表
+// app.js — 页面流程：主页 → 拍照（+可选一句需求）→ 方案（只出 1 个）/修改 → 材质与结算
 import { RackViewer, Turntable } from './viewer.js';
 import { shoeLayout } from './shoes.js';
 import { computeBOM, bomToCSV, BOARD_MATERIALS, ROD_FINISHES, ROD_DIAMETERS, normalizeScheme, evenShelves, UMBRELLA_OUT } from './rack.js';
-import { STYLE_INFO, styleArt } from './styles.js';
 import { mockGenerate, mockRevise } from './mock.js';
 import { readFocal35, shrink, toScene, hfovOf, LENS_MM, photoQuality, photoLight } from './scene.js';
 import { detectHorizon } from './vp.js';
 
 const $ = id => document.getElementById(id);
 const yuan = n => '<small class="cur">¥</small>' + n.toLocaleString('zh-CN'); // 宜家标价样式：货币符号缩小
-let viewer, turntable; // ③ 才创建；先声明，避免它之前的代码出错时 show() 里引用到未初始化变量导致按钮全失效
+let viewer, turntable; // 方案页才创建；先声明，避免它之前的代码出错时 show() 里引用到未初始化变量导致按钮全失效
 const S = {
-  photo: '', scene: null, placed: false, style: '木地板暖色', mock: true,
-  schemes: [],   // [{ versions: [scheme...], cur: 0 }]
+  photo: '', scene: null, placed: false, mock: true, rec: null, variant: 0, nag: 0, sizeOk: false,
+  schemes: [],   // 只有 1 项：[{ versions: [scheme...], cur: 0 }]，「换一个」整个替换
   active: 0, final: null, rows: [], priceEdits: {}, offline: false,
 };
-const STYLES = Object.keys(STYLE_INFO);
 const QUICK = ['再窄一点', '换玻璃隔板', '加一层', '加挂伞杆', '黑色杆', '杆粗一点'];
-const ORDER = ['s-photo', 's-need', 's-design', 's-bom', 's-pay'];
+const ORDER = ['s-photo', 's-design', 's-pay'];
 // 零件价格表只给管理员看：网址加 ?admin（前端开关，不是真正的权限控制）
 const ADMIN = new URLSearchParams(location.search).has('admin');
 // 给客户的预估价 = 零件参考价 × 加工系数 + 固定加工费，取整到 10 元
 const MARKUP = 1.25, LABOR = 50;
 // 在 Artifacts 等别的网站的 iframe 里（读不到 top 的地址就是跨域）；自己的 phone.html 预览框同源，不算
 const IN_FRAME = (() => { try { return window.self !== window.top && window.top.location.origin !== location.origin; } catch { return true; } })();
-if (IN_FRAME) { $('snap').hidden = true; $('csv').textContent = '复制零件表'; }
+if (IN_FRAME) $('csv').textContent = '复制零件表';
 $('admin-bom').hidden = !ADMIN;
 
 function toast(msg, ms = 3500) {
@@ -42,12 +40,9 @@ function oops(msg, detail) { toast(ADMIN && detail ? `${msg}（${detail}）` : m
 function show(id) {
   document.querySelectorAll('main > section').forEach(s => s.hidden = s.id !== id);
   S.page = id;
-  document.body.classList.toggle('appmode', ['s-design', 's-bom', 's-pay'].includes(id));
-  if (id === 's-design') $('stage-home').appendChild($('stage'));
-  if (id === 's-bom') $('stage-bom').appendChild($('stage'));
+  document.body.classList.toggle('home', id === 's-home');
+  document.body.classList.toggle('appmode', ['s-design', 's-pay'].includes(id));
   if (id === 's-pay') turntable.start(); else turntable?.stop();
-  $('to-design').hidden = !S.schemes.length;
-  $('gen').textContent = S.schemes.length ? '重新生成方案' : '生成方案';
   renderSteps();
   scrollTo(0, 0);
   viewer?.resize(); if (viewer) placeHandles();
@@ -55,14 +50,14 @@ function show(id) {
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => show(b.dataset.go));
 
 // 顶部步骤条：走到过的步骤都能点回去（改了照片/需求后再往后走会按新的重新摆放）
-function canGo(k) { return k <= 1 || k <= 3 && S.schemes.length > 0 || k === 4 && !!S.final; }
+function canGo(k) { return k === 0 || S.schemes.length > 0; }
 function renderSteps() {
   const k = ORDER.indexOf(S.page);
   $('stepbar').hidden = k < 0;
-  $('steps-btn').textContent = k >= 0 ? `${k + 1}/5 ${$('steps').children[k].textContent}` : '';
+  $('steps-btn').textContent = k >= 0 ? `${k + 1}/3 ${$('steps').children[k].textContent}` : '';
   [...$('segs').children].forEach((b, i) => b.className = i <= k ? 'on' : '');
   [...$('steps').children].forEach((li, i) => {
-    li.className = i === k ? 'on' : k >= 0 && (i < k || canGo(i) && i > 1) ? 'done' : '';
+    li.className = i === k ? 'on' : k >= 0 && (i < k || canGo(i) && i > 0) ? 'done' : '';
     li.firstChild.disabled = i === k || !canGo(i);
   });
 }
@@ -73,10 +68,8 @@ $('steps-btn').onclick = e => { e.stopPropagation(); openSteps($('steps').hidden
 document.addEventListener('click', e => { if (!$('steps').hidden && !$('steps').contains(e.target)) openSteps(false); });
 function goStep(i) {
   if (i === 0) { show('s-photo'); renderPhotos(); }
-  else if (i === 1) show('s-need');
-  else if (i === 2) enterDesign();
-  else if (i === 3) { if (S.page === 's-design' || !S.final) return choose(); show('s-bom'); renderBOM(); }
-  else if (i === 4) toPay();
+  else if (i === 1) enterDesign();
+  else if (i === 2) choose();
 }
 $('brand').onclick = () => show('s-home');
 
@@ -111,43 +104,12 @@ async function post(url, body) {
 // ---------- 状态 ----------
 fetch('api/status').then(r => r.json()).then(j => {
   S.mock = j.mock;
+  $('mode').hidden = !ADMIN; // 模拟/AI 状态只给后台（?admin）看
   $('mode').textContent = j.mock ? '模拟模式' : ADMIN ? 'AI：' + j.model : 'AI 已接入'; // 具体模型只给后台（?admin）看
   $('mode').className = 'badge' + (j.mock ? '' : ' live');
 }).catch(() => { S.offline = true; $('mode').textContent = '模拟模式（离线）'; });
 
-// ---------- 语音 ----------
-// 录音时麦克风形变成停止方块（morphicons，按需加载；加载失败就保持原图标，只靠变红提示）
-const MIC_D = 'M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21'; // 和 index.html 里的 path 一致
-const STOP_D = 'M9 7h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z';
-let morphLib;
-function bindMic(btn, target) {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR || !isSecureContext || IN_FRAME) {
-    btn.disabled = true;
-    $('mic-hint').textContent = IN_FRAME ? '嵌入页里不能用麦克风，请直接打字。' : !SR ? '这个浏览器不支持语音输入，请直接打字。' : '语音输入需要 https 或 localhost，请直接打字。';
-    return;
-  }
-  let rec = null, morph = null;
-  (morphLib ||= import('./vendor/morphicons/dom.js').catch(() => null))
-    .then(L => { if (L) morph = L.createMorph(btn.querySelector('path'), MIC_D); });
-  const recording = on => {
-    btn.classList.toggle('rec', on); btn.title = on ? '按一下停止' : '按一下开始说话';
-    morph?.morphTo(on ? STOP_D : MIC_D);
-  };
-  btn.onclick = () => {
-    if (rec) return rec.stop();
-    rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true;
-    const base = target.value ? target.value + '，' : '';
-    rec.onresult = e => { target.value = base + [...e.results].map(r => r[0].transcript).join(''); };
-    rec.onerror = e => oops(e.error === 'not-allowed' ? '没有麦克风权限，请在浏览器里允许，或直接打字' : e.error === 'network' ? '语音服务连不上，请直接打字' : '语音识别出错，请直接打字', e.error);
-    rec.onend = () => { rec = null; recording(false); };
-    rec.start(); recording(true);
-  };
-}
-bindMic($('mic-desc'), $('desc'));
-bindMic($('mic-fb'), $('feedback'));
-
-// ---------- ① 照片（最多 3 张，角度略有不同）----------
+// ---------- 拍照页（最多 3 张，角度略有不同）----------
 // 每张选完立刻做本地几何检查（消失点 → 地平线等）并显示能不能用；照片变动后稍等片刻把所有照片一起发给 AI：
 // AI 挑最适合展示的一张、给出靠哪面墙/墙脚点/拍摄高度、指出每张的问题。拍得不好可以单张重拍。
 const MAX_PHOTOS = 3;
@@ -167,6 +129,7 @@ async function addPhotos(files, at) {
       if (!f35 && geo?.hfovEst) { hfov = geo.hfovEst; geo = detectHorizon(img, hfov) || geo; }
     } catch (e) { console.warn('透视检测失败', e); }
     const p = { url, img, aspect, f35, hfov, geo, q: photoQuality(img, geo), ai: '' };
+    if (p.q.level !== 'ok' && ++S.nag > 2) p.q.forced = true; // 最多提示 2 次，之后按默认姿态继续
     if (at !== undefined) { URL.revokeObjectURL(S.photos[at].url); S.photos[at] = p; at = undefined; } else S.photos.push(p);
   }
   photosChanged();
@@ -174,25 +137,31 @@ async function addPhotos(files, at) {
 function removePhoto(i) { URL.revokeObjectURL(S.photos[i].url); S.photos.splice(i, 1); photosChanged(); }
 function retake(i) { S.retakeAt = i; $('cam').click(); }
 
+// 三档：ok 能用 / warn 建议重拍（可「仍然使用」）/ bad 必须重拍；最多提示 2 次，之后按默认姿态继续
+const usable = p => p.q.level === 'ok' || p.q.forced || p.accepted;
 function renderPhotos() {
   const box = $('photos'); box.innerHTML = '';
   S.photos.forEach((p, i) => {
     const d = document.createElement('div'); d.className = 'ph' + (S.best === i && S.photos.length > 1 ? ' best' : '');
-    const bad = !p.q.ok; // 以本地几何检查为准；AI 的意见只作建议（实测它会误报）
+    const ok = p.q.level === 'ok', open = !usable(p), best = S.best === i && S.photos.length > 1 ? '（用这张）' : '';
+    const msg = ok ? (S.analyzing ? '分析中…' : '✓ ' + p.q.msg + best) : '⚠ ' + p.q.msg + (p.q.forced ? '，按默认角度继续，尺寸标「约」' : p.accepted ? '（仍然使用）' : '');
     d.innerHTML = `<img src="${p.url}" alt=""><button class="x" title="删除">✕</button>
-      <div class="q ${bad ? 'bad' : S.analyzing ? 'wait' : 'ok'}">${bad ? '⚠ ' + p.q.msg : S.analyzing ? '分析中…' : '✓ ' + p.q.msg + (S.best === i && S.photos.length > 1 ? '（用这张）' : '')}</div>`
+      <div class="q ${open ? 'bad' : ok && !S.analyzing ? 'ok' : 'wait'}">${msg}</div>`
       + (p.ai && !S.analyzing ? `<div class="q wait">AI 建议：${p.ai.replace(/[<>&]/g, c => `&#${c.charCodeAt(0)};`)}</div>` : '');
-    if (bad) { const r = document.createElement('button'); r.className = 'redo'; r.textContent = '重拍这张'; r.onclick = () => retake(i); d.appendChild(r); }
+    if (open) {
+      const r = document.createElement('button'); r.className = 'redo'; r.textContent = '重拍这张'; r.onclick = () => retake(i); d.appendChild(r);
+      if (p.q.level === 'warn') { const k = document.createElement('button'); k.className = 'redo'; k.textContent = '仍然使用'; k.onclick = () => { p.accepted = true; renderPhotos(); }; d.appendChild(k); }
+    }
     d.querySelector('.x').onclick = () => removePhoto(i);
     box.appendChild(d);
   });
-  $('photo-next').disabled = !S.photos.length;
+  $('gen').disabled = !S.photos.some(usable);
   $('skip-photo').hidden = S.photos.length > 0;
-  $('photo-next').textContent = S.schemes.length ? '用新照片重新摆放' : '下一步';
+  $('gen').textContent = S.schemes.length ? '重新生成方案' : '生成方案';
 }
 
 function photosChanged() {
-  S.placed = false; S.best = undefined;
+  S.placed = false; S.best = undefined; S.rec = null;
   clearTimeout(S.analyzeTimer);
   const seq = S.seq = (S.seq || 0) + 1;
   S.analyzing = !!S.photos.length;
@@ -220,6 +189,7 @@ async function analyze(seq) {
     hfov = hfovOf(LENS_MM[ai.lens], p.aspect);
     try { geo = detectHorizon(p.img, hfov) || geo; } catch {}
   }
+  S.rec = validRec(ai?.rec) || DEFAULT_REC;
   S.best = best; S.analyzing = false; renderPhotos();
   const sp = $('stage-photo'); sp.src = p.url;
   $('stage').style.aspectRatio = `${p.img.naturalWidth} / ${p.img.naturalHeight}`; document.documentElement.style.setProperty('--ar', p.aspect); viewer.resize();
@@ -233,20 +203,16 @@ async function analyze(seq) {
 
 $('cam').onchange = e => { const at = S.retakeAt; S.retakeAt = undefined; addPhotos([...e.target.files], at); e.target.value = ''; };
 $('pick').onchange = e => { addPhotos([...e.target.files]); e.target.value = ''; };
-$('photo-next').onclick = () => S.schemes.length ? enterDesign() : show('s-need');
-// 进 ③：照片换过还没重新摆就先等分析结果再摆
+// 进方案页：照片换过还没重新摆就先等分析结果再摆
 async function enterDesign() {
   if (!S.schemes.length) return;
   if (!S.placed && S.scene) {
-    const btn = $('photo-next'); btn.disabled = true; btn.textContent = 'AI 正在分析照片…';
+    toast('AI 正在分析照片…');
     const scene = await S.scene;
-    btn.disabled = false; renderPhotos();
     show('s-design'); renderDesign(); return placeScene(scene);
   }
   show('s-design'); renderDesign();
 }
-$('to-design').onclick = enterDesign;
-$('back-need').onclick = () => show('s-need');
 function placeScene(scene) {
   if (!scene) return;
   viewer.placeScene(scene); S.placed = true;
@@ -296,16 +262,11 @@ async function checkPlacement() {
   S.checking = false;
 }
 
-// ---------- ② 需求 ----------
-// 风格卡片：示意图 + 一句说明，第一次用的人也知道是什么样
-for (const v of STYLES) {
-  const b = document.createElement('button');
-  b.className = v === S.style ? 'on' : '';
-  b.innerHTML = `${styleArt(v)}<b>${v}</b><small>${STYLE_INFO[v].desc}</small>`;
-  b.onclick = () => { [...$('styles').children].forEach(c => c.className = ''); b.className = 'on'; S.style = v; };
-  $('styles').appendChild(b);
-}
-const cons = () => ({ maxWidth: undefined, maxDepth: undefined, maxHeight: undefined }); // ② 已去掉可用尺寸输入
+// 材质 / 风格 / 色卡推荐：只认能生产的 5 种隔板、4 种杆色；没有 AI 结果时给常见搭配
+const DEFAULT_REC = { style: '常见搭配', shelfMaterial: '实木', rodFinish: '黑色', ai: false };
+const validRec = r => r && r.shelfMaterial in BOARD_MATERIALS && r.rodFinish in ROD_FINISHES
+  ? { style: String(r.style || '').replace(/[<>&]/g, '').slice(0, 10), shelfMaterial: r.shelfMaterial, rodFinish: r.rodFinish, ai: true } : null;
+const cons = () => ({ maxWidth: undefined, maxDepth: undefined, maxHeight: undefined }); // 已去掉可用尺寸输入
 
 // 生成时分步显示进度：真 AI 要 10~30 秒，只改按钮上的字像卡住了。照片分析从上传就开始了，和生成方案并行
 function progress(labels) {
@@ -315,26 +276,39 @@ function progress(labels) {
   const tick = setInterval(() => li.forEach(x => { if (x.className === 'doing') x.dataset.sec = Math.round((Date.now() - t0) / 1000) + ' 秒'; }), 1000);
   return { doing: i => li[i].className = 'doing', done: i => { li[i].className = 'done'; delete li[i].dataset.sec; }, close: () => { clearInterval(tick); el.hidden = true; } };
 }
-$('gen').onclick = async () => {
-  const btn = $('gen'); btn.disabled = true; btn.textContent = '生成中…';
+async function generate() {
+  const btn = $('gen'); btn.disabled = true; btn.textContent = '生成中…'; $('skip-photo').disabled = true;
   const photo = !S.placed && !!S.scene; // 有照片且还没摆过：要等照片分析
-  const p = progress([...(photo ? ['看懂照片：透视、墙面、门'] : []), '设计 3 个方案', S.photos.length ? '摆进你的照片里' : '摆进示例场景里']);
+  const p = progress([...(photo ? ['看懂照片：透视、墙面、门'] : []), '设计方案', S.photos.length ? '摆进你的照片里' : '摆进示例场景里']);
   const [iPhoto, iGen, iPut] = photo ? [0, 1, 2] : [-1, 0, 1];
   try {
     if (photo) { p.doing(iPhoto); S.scene.then(() => p.done(iPhoto)); }
     p.doing(iGen);
-    const j = await post('api/generate', { description: $('desc').value, style: S.style, ...cons() });
+    S.variant = 0;
+    const j = await post('api/generate', { description: $('desc').value, variant: 0, ...cons() });
     p.done(iGen); p.doing(iPut);
-    S.schemes = j.schemes.map(s => ({ versions: [s], cur: 0 }));
-    S.active = 0;
+    S.schemes = [{ versions: [j.schemes[0]], cur: 0 }]; S.active = 0; S.seen = [j.schemes[0].name]; S.final = null;
     const scene = S.placed ? null : await (S.scene || toScene(null, { aspect: 0.75 }));
+    S.rec ||= DEFAULT_REC;
     show('s-design'); renderDesign();
     placeScene(scene);
   } catch (e) { oops('生成失败了，请稍后再试一次', e.message); }
-  p.close(); btn.disabled = false; btn.textContent = S.schemes.length ? '重新生成方案' : '生成方案';
+  p.close(); $('skip-photo').disabled = false; renderPhotos();
+}
+$('gen').onclick = generate;
+$('skip-photo').onclick = generate;
+// 换一个：整个替换成另一个思路的方案（点了才再生成）
+$('another').onclick = async () => {
+  const btn = $('another'); btn.disabled = true; btn.textContent = '生成中…';
+  try {
+    const j = await post('api/generate', { description: $('desc').value, variant: ++S.variant, avoid: S.seen, ...cons() });
+    S.schemes = [{ versions: [j.schemes[0]], cur: 0 }]; S.seen.push(j.schemes[0].name); S.final = null;
+    renderDesign();
+  } catch (e) { oops('换方案失败了，请稍后再试一次', e.message); }
+  btn.disabled = false; btn.textContent = '换一个';
 };
 
-// ---------- ③ 方案 / 修改 ----------
+// ---------- 方案 / 修改 ----------
 viewer = new RackViewer($('stage'));
 const syncSliders = t => {
   $('t-scale').value = t.scale; $('t-rot').value = t.rot; $('t-pitch').value = t.pitch; $('t-light').value = t.lightAz;
@@ -373,11 +347,6 @@ $('seg').querySelectorAll('button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#s-design .pane').forEach(p => p.hidden = p.dataset.pane !== S.pane);
   placeHandles();
 });
-$('snap').onclick = () => {
-  const a = document.createElement('a');
-  a.href = viewer.snapshot($('stage-photo')); a.download = '鞋架效果图.jpg'; a.click();
-};
-
 const current = () => { const e = S.schemes[S.active]; return e.versions[e.cur]; };
 const pairs = s => { const l = shoeLayout(s); return `${l.male + l.female} 双（男 ${l.male} / 女 ${l.female}）`; }; // 按真实鞋子尺寸摆出来的双数
 const dimsShort = s => { const l = shoeLayout(s); return `${s.width}×${s.depth}×${s.height}cm · ${s.shelves.length} 层<br>可放 ${l.male + l.female} 双`; };
@@ -385,13 +354,6 @@ const dims = s => `${s.width}×${s.depth}×${s.height} cm · ${s.shelves.length}
   + (s.hooks ? ` · 挂钩×${s.hooks}` : '') + (s.umbrella ? ' · 挂伞杆' : '');
 
 function renderDesign() {
-  const tabs = $('scheme-tabs'); tabs.innerHTML = '';
-  S.schemes.forEach((e, i) => {
-    const b = document.createElement('button');
-    b.textContent = e.versions[0].name; b.className = i === S.active ? 'on' : '';
-    b.onclick = () => { S.active = i; renderDesign(); };
-    tabs.appendChild(b);
-  });
   const s = current(), e = S.schemes[S.active];
   $('scheme-intro').textContent = s.intro;
   $('scheme-dims').innerHTML = dimsShort(s);
@@ -518,43 +480,44 @@ $('revise').onclick = async () => {
   btn.disabled = false; btn.textContent = '修改';
 };
 
-// ---------- ④ 材质 + 零件表 ----------
+// ---------- 材质 + 结算：旋转展示 + 材质/杆色 + 预估价格 ----------
+turntable = new Turntable($('turntable'));
 $('choose').onclick = () => choose();
-function choose() {
-  S.final = { ...current() };
-  show('s-bom');
-  chips($('mats'), Object.keys(BOARD_MATERIALS), S.final.shelfMaterial, v => { S.final.shelfMaterial = v; renderBOM(); }, v => rgba(BOARD_MATERIALS[v].color, Math.max(.5, BOARD_MATERIALS[v].opacity)));
-  chips($('fins'), Object.keys(ROD_FINISHES), S.final.rodFinish, v => { S.final.rodFinish = v; renderBOM(); }, v => rgba(ROD_FINISHES[v]));
-  renderBOM();
-}
 $('back-design').onclick = () => { show('s-design'); renderDesign(); };
 $('show-shoes').onchange = e => viewer.setShoes(e.target.checked);
-
-// ---------- ⑤ 结算：旋转展示 + 预估价格 ----------
-turntable = new Turntable($('turntable'));
 const estimate = () => Math.ceil((S.rows.reduce((t, r) => t + r.qty * r.price, 0) * MARKUP + LABOR) / 10) * 10;
-$('to-pay').onclick = () => toPay();
-function toPay() {
-  const s = S.final, l = shoeLayout(s);
-  $('pay-name').textContent = s.name;
-  $('pay-spec').innerHTML = [
-    ['尺寸', `${s.width} × ${s.depth} × ${s.height} cm`], ['层数', `${s.shelves.length} 层`],
-    ['可放鞋', `约 ${l.male + l.female} 双`], ['隔板', s.shelfMaterial],
-    ['杆件', `Φ${s.rodDiameter}mm ${s.rodFinish}`], ['配件', [s.hooks ? `挂钩 ×${s.hooks}` : '', s.umbrella ? '挂伞杆' : ''].filter(Boolean).join('、') || '无'],
-  ].map(([k, v]) => `<li><span>${k}</span>${v}</li>`).join('');
-  $('est-price').innerHTML = yuan(estimate());
-  $('order').textContent = `付定金 ¥${Math.ceil(estimate() * 0.3 / 10) * 10}`;
-  show('s-pay');
-  turntable.reset(); turntable.setScheme(s);
+const matDot = v => rgba(BOARD_MATERIALS[v].color, Math.max(.5, BOARD_MATERIALS[v].opacity)), finDot = v => rgba(ROD_FINISHES[v]);
+// 选材质/杆色同时写回当前方案版本，回方案页再回来不丢
+function setLook(k, v) { S.final[k] = v; current()[k] = v; fillLook(); renderPay(); }
+function fillLook() {
+  chips($('mats'), Object.keys(BOARD_MATERIALS), S.final.shelfMaterial, v => setLook('shelfMaterial', v), matDot);
+  chips($('fins'), Object.keys(ROD_FINISHES), S.final.rodFinish, v => setLook('rodFinish', v), finDot);
+  renderRec();
 }
-$('back-bom').onclick = () => { show('s-bom'); renderBOM(); };
-
-function renderBOM() {
-  const s = S.final, { rows, totalRodMM } = computeBOM(s);
+function renderRec() {
+  const r = S.rec; $('rec').hidden = !r; if (!r) return;
+  const same = r.shelfMaterial === S.final.shelfMaterial && r.rodFinish === S.final.rodFinish;
+  $('rec-txt').textContent = r.ai ? `${r.style ? r.style + '，' : ''}配${r.shelfMaterial}隔板、${r.rodFinish}杆` : `常见搭配：${r.shelfMaterial}隔板、${r.rodFinish}杆`;
+  $('rec-use').textContent = same ? '已采用' : '采用'; $('rec-use').disabled = same;
+}
+$('rec-use').onclick = () => { for (const o of [S.final, current()]) Object.assign(o, { shelfMaterial: S.rec.shelfMaterial, rodFinish: S.rec.rodFinish }); fillLook(); renderPay(); };
+function choose() {
+  S.final = { ...current() }; S.sizeOk = false;
+  show('s-pay'); fillLook(); renderPay();
+  turntable.reset();
+}
+// 尺寸只靠门高估算，所以写「约」并让用户点一下确认；厂家下单前还会人工复核
+$('size-ok').onclick = () => { S.sizeOk = true; renderSize(); };
+function renderSize() {
+  const s = S.final, l = shoeLayout(s);
+  $('pay-size').innerHTML = `约 <b>${s.width}×${s.depth}×${s.height} cm</b> · 可放约 ${l.male + l.female} 双`;
+  $('size-ok').textContent = S.sizeOk ? '✓ 已确认' : '确认尺寸'; $('size-ok').disabled = S.sizeOk;
+}
+function renderPay() {
+  const s = S.final, { rows } = computeBOM(s);
   for (const r of rows) if (r.name in S.priceEdits) r.price = S.priceEdits[r.name]; // 切材质/颜色时保留用户改过的单价
   S.rows = rows;
-  viewer.setScheme(s);
-  $('final-dims').textContent = `${s.name}：${dims(s)} · 光轴总长 ${(totalRodMM / 1000).toFixed(2)} m`;
+  renderSize(); turntable.setScheme(s);
   const tb = $('bom').tBodies[0]; tb.innerHTML = '';
   rows.forEach(r => {
     const tr = document.createElement('tr');
@@ -565,7 +528,7 @@ function renderBOM() {
   updateTotal();
 }
 function updateTotal() {
-  $('est-mini').innerHTML = yuan(estimate());
+  $('est-price').innerHTML = yuan(estimate());
   let t = 0;
   [...$('bom').tBodies[0].rows].forEach((tr, i) => {
     const sub = S.rows[i].qty * S.rows[i].price; t += sub;
@@ -584,7 +547,20 @@ $('csv').onclick = () => {
   a.href = URL.createObjectURL(blob); a.download = `鞋架零件表_${s.name}.csv`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
-$('order').onclick = () => toast('原型到此为止：正式版在这里付定金，并把零件表 + 效果图发给合作厂家。', 5000);
+// 保存方案：暂存浏览器 + 效果图（有照片时叠在照片上）用系统分享；不支持分享就弹出图片，长按保存
+$('order').onclick = async () => {
+  if (!S.sizeOk) return toast('先点一下「确认尺寸」');
+  try { localStorage.setItem('luojian.saved', JSON.stringify({ scheme: S.final, need: $('desc').value, at: Date.now() })); } catch {}
+  let canvas = turntable.renderer.domElement;
+  const ph = S.photos[S.best || 0];
+  if (ph) { viewer.setScheme(S.final); canvas = viewer.composite(ph.img); } else turntable.render();
+  const blob = await new Promise(d => canvas.toBlob(d, 'image/jpeg', 0.9)), file = new File([blob], '落间方案.jpg', { type: 'image/jpeg' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: '落间方案' }); return toast('方案已保存'); } catch (e) { if (e.name === 'AbortError') return toast('方案已保存'); }
+  }
+  URL.revokeObjectURL($('snap-img').src); $('snap-img').src = URL.createObjectURL(blob); $('snap-view').hidden = false;
+};
+$('snap-close').onclick = () => $('snap-view').hidden = true;
 
 renderSteps();
 window.__app = { S, viewer, turntable, computeBOM, goStep }; // 方便调试

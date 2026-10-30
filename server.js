@@ -43,7 +43,7 @@ async function api(req, res, url) {
     if (mockWanted) return send(res, 200, { schemes: mockGenerate(body), mock: true });
     try {
       const out = await chat(env, buildGenerateMessages(body), 0.8);
-      const list = (out.schemes || []).slice(0, 3).map(s => normalizeScheme(s, consOf(body)));
+      const list = (out.schemes || []).slice(0, 1).map(s => normalizeScheme(s, consOf(body)));
       if (!list.length) throw new Error('模型没给出方案');
       return send(res, 200, { schemes: list, mock: false });
     } catch (e) {

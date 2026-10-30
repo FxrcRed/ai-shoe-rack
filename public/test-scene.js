@@ -79,7 +79,6 @@ export async function start(opts = {}, { desc = '放 8 双鞋，宽 80cm 以内'
   const pick = document.getElementById('pick'); pick.files = dt.files; pick.dispatchEvent(new Event('change'));
   document.getElementById('desc').value = desc;
   window.__T0 = Date.now();
-  document.getElementById('photo-next').click();
   setTimeout(() => document.getElementById('gen').click(), 300);
   return 'started';
 }

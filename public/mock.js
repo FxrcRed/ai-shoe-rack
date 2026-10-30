@@ -17,7 +17,7 @@ const STYLE = {
 
 export function mockGenerate(req) {
   const cons = { maxWidth: req.maxWidth, maxDepth: req.maxDepth, maxHeight: req.maxHeight };
-  const st = STYLE[req.style] || STYLE['现代简约'];
+  const st = STYLE[req.style] || STYLE['木地板暖色'];
   const text = req.description || '';
   const pairs = guessPairs(text), umb = /伞/.test(text), hooks = /钥匙|挂包|背包|包包|挂钩|钩子|帽子|挂衣|外套|围巾/.test(text) ? 3 : 0; // 只在用户提到要挂东西时加（"挂雨伞"不算）
   const W = Math.min(+req.maxWidth || 100, 100), D = Math.min(+req.maxDepth || 32, 32);
@@ -32,7 +32,7 @@ export function mockGenerate(req) {
     { name: '换鞋凳款', intro: '两层鞋 + 可坐的实木顶面，换鞋时能坐，杆径加粗承重', width: W, depth: D,
       height: 45, shelves: [5, 25, 45], hooks: 0, umbrella: umb, shelfMaterial: '实木', rodDiameter: 16, rodFinish: st.fin },
   ];
-  return raw.map(r => normalizeScheme(r, cons));
+  return [normalizeScheme(raw[(req.variant || 0) % raw.length], cons)]; // 一次只出 1 个，「换一个」按 variant 轮换
 }
 
 export function mockRevise(req) {
