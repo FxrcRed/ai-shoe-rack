@@ -7,17 +7,17 @@
 <meta name="theme-color" content="#f5f5f5">
 <link rel="stylesheet" href="style.css">
 </head>
-<body class="home">
-<header class="bar">
-  <b class="brand" id="brand">落间</b>
-  <span class="bar-r"><span id="mode" class="badge"></span></span>
-</header>
-<nav class="stepbar" id="stepbar" hidden><button id="steps-btn" class="steps-btn" aria-expanded="false" aria-controls="steps"></button><i class="segs" id="segs"><b></b><b></b><b></b></i></nav>
-<ol id="steps" class="steps" hidden><li><button>拍照</button></li><li><button>方案</button></li><li><button>材质与结算</button></li></ol>
+<body class="home hub">
+<span id="mode" class="badge" hidden></span>
+<nav class="stepbar" id="stepbar" hidden><button aria-label="拍照"></button><button aria-label="方案"></button><button aria-label="材质与结算"></button></nav>
 
 <main>
-<section id="s-home" class="card hero">
-  <svg class="hero-art" viewBox="0 0 160 136" aria-hidden="true">
+<section id="s-home" class="page hero">
+  <div class="head"><h1>落间</h1><button class="hubbtn" data-tab="s-saved" aria-label="我的方案"><svg viewBox="30 0 118 134"  fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M36 16V128M124 16V128M54 6V118M142 6V118M36 16H124L142 6H54ZM36 56H124L142 46H54ZM36 96H124L142 86H54ZM36 128H124L142 118H54Z"/></svg></button>
+  <p class="lead">拍一张照，先试住，再定制。</p></div>
+  <div class="media">
+  <svg class="hero-art" viewBox="9 0 160 136" aria-hidden="true">
+    <ellipse class="base" cx="90" cy="131" rx="64" ry="5"/>
     <g class="rods">
       <path pathLength="1" style="--i:0" d="M36 16V128"/>
       <path pathLength="1" style="--i:1" d="M124 16V128"/>
@@ -34,46 +34,61 @@
       <circle style="--i:2" cx="64" cy="84" r="10"/>
     </g>
   </svg>
-  <h1>落间</h1>
-  <p class="lead">拍一张照，先试住，再定制。</p>
+  </div>
   <button class="primary big" data-go="s-photo">开始设计</button>
 </section>
 
-<section id="s-photo" class="card" hidden>
-  <h2>拍下要放鞋架的角落</h2>
+<section id="s-photo" class="page" hidden>
+  <div class="head row-head"><button class="back" data-go="s-home" aria-label="返回"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button><h2>拍下要放鞋架的角落</h2></div>
+  <div class="media">
   <label for="cam" class="guide">
-    <svg viewBox="0 0 120 160" aria-hidden="true">
-      <rect x="2" y="2" width="116" height="156" rx="12" class="g-frame"/>
-      <path d="M8 8H112V96L84 104H36L8 96Z" class="g-wall"/>
-      <path d="M8 96L36 104H84L112 96V152H8Z" class="g-floor"/>
-      <path d="M8 96L36 104H84L112 96" class="g-base"/>
-      <path d="M36 104V8M84 104V8" class="g-edge"/>
-      <rect x="44" y="70" width="32" height="32" rx="2" class="g-rack"/>
+    <svg viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="g-ln">
+        <path d="M53 0Q75 40 95 84M219 0Q212 42 205 84M95 84Q150 82 205 84"/>
+        <path d="M95 84Q94 176 97 269M205 84Q206 176 203 270"/>
+        <path d="M97 269Q50 312 0 361M203 270Q219 335 236 400"/>
+        <path d="M97 269H203"/>
+        <path d="M64 300Q140 298 211 300M33 330Q130 327 218 330M0 365Q110 361 227 365M83 283Q145 282 207 283" class="g-fine"/>
+        <path d="M111 270V124Q148 121 186 124V270M117 270V128Q149 126 181 128V270M117 128"/>
+        <path d="M128 139H170V152H128ZM142 139V152M156 139V152"/>
+        <path d="M128 209V161H147V209ZM156 209V161H172V209ZM128 262V218H147V262ZM156 262V218H172V262Z" class="g-fine"/>
+        <circle cx="176" cy="212" r="2.5"/><circle cx="177" cy="226" r="2"/>
+        <path d="M118 273Q150 268 184 273L182 285Q150 289 120 285Z"/>
+        <path d="M126 276L124 284M138 275L136 286M150 274L148 287M162 275L160 286M174 275L172 285" class="g-fine"/>
+        <path d="M120 20Q137 6 154 20M118 22Q137 30 156 22M137 6V0M122 21L152 21" />
+        <ellipse cx="137" cy="22" rx="19" ry="3"/>
+        <path d="M284 36Q285 220 284 400M292 28Q293 220 292 400"/>
+        <circle cx="80" cy="222" r="3"/>
+        <path d="M191 280H205V288H191ZM194 280V288M198 280V288M202 280V288" class="g-fine"/>
+        <path d="M50 336L104 302L113 318L66 347Z"/>
+        <path d="M60 332Q58 318 68 316L82 311Q88 318 84 326Q78 332 70 334ZM84 320Q84 306 96 306Q104 310 100 318Q94 322 88 324ZM70 342Q68 332 78 330L92 326Q98 332 94 338Q86 342 78 344ZM96 328Q98 316 108 316Q114 322 108 330Q102 332 98 332Z"/>
+        <path d="M72 322Q76 318 80 322M90 312Q94 308 98 312M80 336Q84 332 88 336" class="g-fine"/>
+      </g>
+      <g class="g-acc"><path d="M97 262Q50 304 0 345M203 262Q219 330 231 400"/></g>
+      <path class="g-mark" d="M20 52V20H52M280 52V20H248M20 348V380H52M280 348V380H248"/>
     </svg>
-    <ul>
-      <li><b>竖着拍</b>，拍进<b>地面</b>和<b>墙脚线</b></li>
-      <li>拍到门更准</li>
-    </ul>
+    <p class="guide-tip">竖着拍，拍进地面和墙脚线，拍到门更准</p>
   </label>
+  <div id="photos" class="photos"></div>
+  <ol class="progress" id="gen-progress" hidden></ol>
+  </div>
   <div class="row">
     <label class="btn primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>拍照<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>
     <label class="btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>从相册选<input id="pick" type="file" accept="image/*" multiple hidden></label>
   </div>
-  <div id="photos" class="photos"></div>
-  <textarea id="desc" rows="1" placeholder="想要什么样的？可不填，如：想挂雨伞"></textarea>
-  <div class="row end">
-    <button class="ghost" id="skip-photo">没有照片，先试试</button>
-    <button class="primary" id="gen" disabled>生成方案</button>
+  <div id="after" hidden>
+    <textarea id="desc" rows="1" placeholder="想要什么样的？可不填，如：想挂雨伞"></textarea>
+    <button class="primary big" id="gen" disabled>生成方案</button>
   </div>
-  <ol class="progress" id="gen-progress" hidden></ol>
 </section>
 
-<section id="s-design" class="card app" hidden>
-  <div id="stage-home" class="stage-box">
+<section id="s-design" class="page flow" hidden>
+  <div class="media"><div id="stage-home" class="stage-box">
     <div id="stage" class="stage"><img id="stage-photo" alt=""><div class="handles" id="handles"></div></div>
-  </div>
+  </div></div>
+  <div class="sheet">
   <div class="seg" id="seg">
-    <button data-pane="tips" class="on">提示</button><button data-pane="size">尺寸</button><button data-pane="pos">位置</button><button data-pane="look">显示</button><button data-pane="ai">AI 修改</button>
+    <button data-pane="tips" class="on">提示</button><button data-pane="size">尺寸</button><button data-pane="pos">位置</button><button data-pane="ai">修改</button>
   </div>
   <div class="panes">
     <div class="pane tips" data-pane="tips">
@@ -94,57 +109,53 @@
       <label class="toggle"><input type="checkbox" id="umb"> 挂伞杆 <span class="hint">（右侧伸出 12cm，带接水盘）</span></label>
     </div>
     <div class="pane" data-pane="pos" hidden>
-      <div class="row tight"><button id="rot-ccw">↺ 90°</button><button id="rot-cw">↻ 90°</button><button id="t-reset">按 AI 重新摆放</button></div>
-      <div class="dial"><span>大小</span><input type="range" id="t-scale" min="0.5" max="2" step="0.01"></div>
-      <div class="dial"><span>转向</span><input type="range" id="t-rot" min="-180" max="180" step="1"></div>
-      <div class="dial"><span>俯仰</span><input type="range" id="t-pitch" min="-10" max="80" step="0.5"></div>
-      <p class="hint">AI 已按照片透视摆好、按真实尺寸显示。单指拖动沿地面移位置，双指旋转缩放；电脑上滚轮缩放、Shift+滚轮旋转。</p>
-    </div>
-    <div class="pane" data-pane="look" hidden>
-      <div class="dial"><span>光照</span><input type="range" id="t-light" min="-180" max="180" step="5"></div>
-      <p class="hint" id="light-src"></p>
-      <label class="toggle"><input type="checkbox" id="show-shoes" checked> 显示参照鞋 <span class="hint">（男 42 码 29×11cm · 女 37 码 25×9cm，真实尺寸）</span></label>
-      <div class="row tight"><button id="retake">重拍照片</button></div>
+      <div class="row tight"><button id="rot-ccw">↺ 向左转</button><button id="rot-cw">↻ 向右转</button><button id="t-reset">按 AI 重新摆放</button></div>
+      <p class="hint">单指拖动移位置，双指旋转缩放。</p>
     </div>
     <div class="pane" data-pane="ai" hidden>
       <div class="versions" id="versions"></div>
       <input id="feedback" placeholder="例如：再窄一点、换玻璃隔板、加一层">
       <div class="chips sm" id="quick"></div>
-      <div class="row end"><button class="primary" id="revise">让 AI 修改</button></div>
+      <div class="row end"><button id="revise">让 AI 修改</button></div>
     </div>
   </div>
+  </div>
   <div class="dock">
-    <button class="ghost" id="another">换一个</button>
+    <button id="another">换一个</button>
     <p id="scheme-dims" class="dims"></p>
     <button class="primary" id="choose">就这个了</button>
   </div>
 </section>
 
-<section id="s-pay" class="card app pay" hidden>
-  <div class="rec" id="rec" hidden><span id="rec-txt"></span><button id="rec-use">采用</button></div>
-  <div class="turntable" id="turntable"><span class="tt-hint">拖动 360° 旋转 · 双指或滚轮缩放 · 双击复位</span></div>
-  <div class="panes">
-    <div class="opt-row"><span>隔板</span><div class="chips sm" id="mats"></div></div>
-    <div class="opt-row"><span>杆色</span><div class="chips sm" id="fins"></div></div>
-    <div class="size-row"><span id="pay-size"></span><button id="size-ok">确认尺寸</button></div>
-    <div class="price-box">
-      <b id="est-price">—</b>
-      <small id="est-note">预估价，以厂家报价为准；下单前人工复核尺寸</small>
-    </div>
-    <div id="admin-bom" hidden>
-      <p class="label">零件价格表 <span class="hint">（仅管理员可见，单价可直接改）</span></p>
-      <div class="table-wrap"><table id="bom"><thead><tr><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody></tbody></table></div>
-      <p class="total">零件合计 <b id="total">0</b> 元</p>
-      <div class="row end"><button id="csv">导出 CSV</button></div>
+<section id="s-pay" class="page flow pay" hidden>
+  <div class="media tt"><div class="turntable" id="turntable"><span class="tt-hint">拖动旋转 · 双指缩放</span></div></div>
+  <div class="sheet">
+    <div class="panes">
+      <h2 id="pay-name"></h2>
+      <div class="rec" id="rec" hidden><span id="rec-txt"></span><button id="rec-use">采用</button></div>
+      <p class="label">隔板</p>
+      <div class="chips cards" id="mats" data-cards></div>
+      <div class="line"><p class="label">杆色 <span class="hint" id="fin-name"></span></p><div class="chips swatch" id="fins" data-dots></div></div>
+      <div class="size-row"><span id="pay-size"></span><button id="size-ok">确认尺寸</button></div>
+      <div id="admin-bom" hidden>
+        <p class="label">零件价格表 <span class="hint">（仅管理员可见，单价可直接改）</span></p>
+        <div class="table-wrap"><table id="bom"><thead><tr><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody></tbody></table></div>
+        <p class="total">零件合计 <b id="total">0</b> 元</p>
+        <div class="row end"><button id="csv">导出 CSV</button></div>
+      </div>
     </div>
   </div>
   <div class="dock">
-    <button class="ghost" id="back-design">‹ 方案</button>
+    <div class="price"><b id="est-price">—</b><small id="est-note">预估价 · 下单前人工复核尺寸</small></div>
     <button class="primary" id="order">保存方案</button>
   </div>
 </section>
+<section id="s-saved" class="page" hidden>
+  <div class="head"><h1>我的方案</h1><button class="hubbtn" data-tab="s-home" aria-label="首页"><svg viewBox="30 0 118 134"  fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M36 16V128M124 16V128M54 6V118M142 6V118M36 16H124L142 6H54ZM36 56H124L142 46H54ZM36 96H124L142 86H54ZM36 128H124L142 118H54Z"/></svg></button></div>
+  <div id="saved-list" class="saved"></div>
+</section>
 </main>
-<div id="snap-view" class="snap-view" hidden><img id="snap-img" alt=""><p>方案已保存，长按图片存到相册</p><button id="snap-close" class="primary">好</button></div>
+<div id="snap-view" class="snap-view" hidden><img id="snap-img" alt=""><p>方案已保存。长按图片可存到相册</p><button id="snap-saved" class="primary">看我的方案</button><button id="snap-close">返回</button></div>
 <div id="toast" class="toast" hidden></div>
 <script>
 // 脚本出错时直接显示在页面上（手机上看不到控制台）；模块 404 只在 script 元素上触发 error，所以用捕获阶段

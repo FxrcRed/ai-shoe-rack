@@ -41,6 +41,9 @@ function show(id) {
   document.querySelectorAll('main > section').forEach(s => s.hidden = s.id !== id);
   S.page = id;
   document.body.classList.toggle('home', id === 's-home');
+  const hub = id === 's-home' || id === 's-saved';
+  document.body.classList.toggle('hub', hub);
+  if (id === 's-saved') renderSaved();
   document.body.classList.toggle('appmode', ['s-design', 's-pay'].includes(id));
   if (id === 's-pay') turntable.start(); else turntable?.stop();
   renderSteps();
@@ -54,24 +57,46 @@ function canGo(k) { return k === 0 || S.schemes.length > 0; }
 function renderSteps() {
   const k = ORDER.indexOf(S.page);
   $('stepbar').hidden = k < 0;
-  $('steps-btn').textContent = k >= 0 ? `${k + 1}/3 ${$('steps').children[k].textContent}` : '';
-  [...$('segs').children].forEach((b, i) => b.className = i <= k ? 'on' : '');
-  [...$('steps').children].forEach((li, i) => {
-    li.className = i === k ? 'on' : k >= 0 && (i < k || canGo(i) && i > 0) ? 'done' : '';
-    li.firstChild.disabled = i === k || !canGo(i);
+  [...$('stepbar').children].forEach((b, i) => {
+    b.className = i <= k ? 'on' : '';
+    b.disabled = i === k || !canGo(i);
   });
 }
-[...$('steps').children].forEach((li, i) => li.firstChild.onclick = () => { openSteps(false); goStep(i); });
-// 步骤菜单平时收起，点步骤条左边的「2/5 需求」展开
-function openSteps(on) { $('steps').hidden = !on; $('steps-btn').setAttribute('aria-expanded', on); }
-$('steps-btn').onclick = e => { e.stopPropagation(); openSteps($('steps').hidden); };
-document.addEventListener('click', e => { if (!$('steps').hidden && !$('steps').contains(e.target)) openSteps(false); });
+[...$('stepbar').children].forEach((b, i) => b.onclick = () => goStep(i));
 function goStep(i) {
   if (i === 0) { show('s-photo'); renderPhotos(); }
   else if (i === 1) enterDesign();
   else if (i === 2) choose();
 }
-$('brand').onclick = () => show('s-home');
+document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
+
+// 我的方案：存在浏览器里，最多 12 个，每个带一张效果图
+const LIST_KEY = 'luojian.list';
+function loadList() { try { return JSON.parse(localStorage.getItem(LIST_KEY)) || []; } catch { return []; } }
+function storeList(list) {
+  for (; ;) {
+    try { localStorage.setItem(LIST_KEY, JSON.stringify(list)); return; } catch { if (list.length <= 1) return; list.pop(); }
+  }
+}
+function renderSaved() {
+  const box = $('saved-list'); box.innerHTML = '';
+  loadList().forEach(it => {
+    const s = it.scheme, d = document.createElement('div'); d.className = 'saved-item';
+    d.innerHTML = `<img alt=""><div><b></b><p class="meta"></p><span class="amt"></span></div><button class="x" aria-label="删除">×</button><button class="view">查看</button>`;
+    d.querySelector('img').src = it.img;
+    d.querySelector('b').textContent = s.name;
+    d.querySelector('.meta').textContent = `约 ${s.width}×${s.depth}×${s.height}cm · ${s.shelfMaterial}`;
+    d.querySelector('.amt').innerHTML = yuan(it.price);
+    d.onclick = () => { S.schemes = [{ versions: [it.scheme], cur: 0 }]; S.active = 0; choose(); };
+    const x = d.querySelector('.x'); // 第一次点变成「删除」，再点才删
+    x.onclick = e => {
+      e.stopPropagation();
+      if (!x.classList.contains('arm')) { x.classList.add('arm'); x.textContent = '删除'; return setTimeout(() => { x.classList.remove('arm'); x.textContent = '×'; }, 2500); }
+      storeList(loadList().filter(y => y.id !== it.id)); renderSaved();
+    };
+    box.appendChild(d);
+  });
+}
 
 const rgba = (n, a = 1) => `rgba(${n >> 16}, ${n >> 8 & 255}, ${n & 255}, ${a})`;
 // dot(v) 给出颜色时每个选项前加色点（材质/杆色），这一行改成横向滑动不换行
@@ -79,7 +104,9 @@ function chips(el, list, cur, onPick, dot) {
   el.innerHTML = ''; el.classList.toggle('swatch', !!dot);
   for (const v of list) {
     const b = document.createElement('button');
-    if (dot) b.innerHTML = `<i class="dot" style="background:${dot(v)}"></i>${v}`; else b.textContent = v;
+    if ('cards' in el.dataset) b.innerHTML = `<i class="sw" style="background:${dot(v)}"></i><span>${v}</span>`;
+    else if (dot) b.innerHTML = `<i class="dot" style="background:${dot(v)}"></i>${'dots' in el.dataset ? '' : v}`; else b.textContent = v;
+    b.title = v; b.setAttribute('aria-label', v);
     b.className = v === cur ? 'on' : '';
     b.onclick = () => { [...el.children].forEach(c => c.className = ''); b.className = 'on'; onPick(v); };
     el.appendChild(b);
@@ -144,19 +171,19 @@ function renderPhotos() {
   S.photos.forEach((p, i) => {
     const d = document.createElement('div'); d.className = 'ph' + (S.best === i && S.photos.length > 1 ? ' best' : '');
     const ok = p.q.level === 'ok', open = !usable(p), best = S.best === i && S.photos.length > 1 ? '（用这张）' : '';
-    const msg = ok ? (S.analyzing ? '分析中…' : '✓ ' + p.q.msg + best) : '⚠ ' + p.q.msg + (p.q.forced ? '，按默认角度继续，尺寸标「约」' : p.accepted ? '（仍然使用）' : '');
-    d.innerHTML = `<img src="${p.url}" alt=""><button class="x" title="删除">✕</button>
-      <div class="q ${open ? 'bad' : ok && !S.analyzing ? 'ok' : 'wait'}">${msg}</div>`
-      + (p.ai && !S.analyzing ? `<div class="q wait">AI 建议：${p.ai.replace(/[<>&]/g, c => `&#${c.charCodeAt(0)};`)}</div>` : '');
+    const msg = ok ? (S.analyzing ? '分析中…' : p.q.msg + best) : p.q.msg + (p.q.forced ? '，按默认角度继续，尺寸标「约」' : p.accepted ? '（仍然使用）' : '');
+    const ai = p.ai && !S.analyzing ? `<span class="q wait">AI 建议：${p.ai.replace(/[<>&]/g, c => `&#${c.charCodeAt(0)};`)}</span>` : '';
+    d.innerHTML = `<img src="${p.url}" alt=""><button class="x" aria-label="删除">✕</button>
+      <div class="tags"><span class="q ${open ? 'bad' : ok && !S.analyzing ? 'ok' : 'wait'}">${msg}</span>${ai}</div>`;
     if (open) {
-      const r = document.createElement('button'); r.className = 'redo'; r.textContent = '重拍这张'; r.onclick = () => retake(i); d.appendChild(r);
-      if (p.q.level === 'warn') { const k = document.createElement('button'); k.className = 'redo'; k.textContent = '仍然使用'; k.onclick = () => { p.accepted = true; renderPhotos(); }; d.appendChild(k); }
+      const r = document.createElement('button'); r.className = 'redo'; r.textContent = '重拍这张'; r.onclick = () => retake(i); d.querySelector('.tags').appendChild(r);
+      if (p.q.level === 'warn') { const k = document.createElement('button'); k.className = 'redo'; k.textContent = '仍然使用'; k.onclick = () => { p.accepted = true; renderPhotos(); }; d.querySelector('.tags').appendChild(k); }
     }
     d.querySelector('.x').onclick = () => removePhoto(i);
     box.appendChild(d);
   });
   $('gen').disabled = !S.photos.some(usable);
-  $('skip-photo').hidden = S.photos.length > 0;
+  $('after').hidden = !S.photos.length;
   $('gen').textContent = S.schemes.length ? '重新生成方案' : '生成方案';
 }
 
@@ -277,8 +304,7 @@ function progress(labels) {
   return { doing: i => li[i].className = 'doing', done: i => { li[i].className = 'done'; delete li[i].dataset.sec; }, close: () => { clearInterval(tick); el.hidden = true; } };
 }
 async function generate() {
-  const btn = $('gen'); btn.disabled = true; btn.textContent = '生成中…'; $('skip-photo').disabled = true;
-  const photo = !S.placed && !!S.scene; // 有照片且还没摆过：要等照片分析
+  const btn = $('gen'); btn.disabled = true; btn.textContent = '生成中…';  const photo = !S.placed && !!S.scene; // 有照片且还没摆过：要等照片分析
   const p = progress([...(photo ? ['看懂照片：透视、墙面、门'] : []), '设计方案', S.photos.length ? '摆进你的照片里' : '摆进示例场景里']);
   const [iPhoto, iGen, iPut] = photo ? [0, 1, 2] : [-1, 0, 1];
   try {
@@ -293,10 +319,9 @@ async function generate() {
     show('s-design'); renderDesign();
     placeScene(scene);
   } catch (e) { oops('生成失败了，请稍后再试一次', e.message); }
-  p.close(); $('skip-photo').disabled = false; renderPhotos();
+  p.close(); renderPhotos();
 }
 $('gen').onclick = generate;
-$('skip-photo').onclick = generate;
 // 换一个：整个替换成另一个思路的方案（点了才再生成）
 $('another').onclick = async () => {
   const btn = $('another'); btn.disabled = true; btn.textContent = '生成中…';
@@ -311,8 +336,6 @@ $('another').onclick = async () => {
 // ---------- 方案 / 修改 ----------
 viewer = new RackViewer($('stage'));
 const syncSliders = t => {
-  $('t-scale').value = t.scale; $('t-rot').value = t.rot; $('t-pitch').value = t.pitch; $('t-light').value = t.lightAz;
-  $('light-src').textContent = viewer.scene0?.light?.src === 'ai' ? '光照方向已由 AI 按照片判断，可拖动微调。' : viewer.scene0?.light ? '光照方向按照片亮度估计，可拖动微调。' : '拖动调整光照方向，让影子和照片一致。';
   showFit();
 };
 // 门的开启范围：自动避让的结果 / 太宽的建议 / 用户拖进去的警告
@@ -331,14 +354,11 @@ function showFit() {
 }
 viewer.onChange = syncSliders; syncSliders(viewer.t);
 viewer.onFrame = () => placeHandles();
-for (const k of ['scale', 'rot', 'pitch']) $('t-' + k).oninput = e => { viewer.dragged = true; viewer.set({ [k]: +e.target.value }); };
-$('t-light').oninput = e => viewer.set({ lightAz: +e.target.value });
 // 旋转 90°（俯视看：顺时针 = rot 减小）；转了就不再自动贴原来那面墙
 const turn = deg => { viewer.anchor = null; viewer.dragged = true; viewer.set({ rot: ((viewer.t.rot + deg + 540) % 360) - 180 }); };
 $('rot-cw').onclick = () => turn(-90);
 $('rot-ccw').onclick = () => turn(90);
 $('t-reset').onclick = () => viewer.scene0 && viewer.placeScene(viewer.scene0);
-$('retake').onclick = () => goStep(0);
 // 分段切换控件面板；尺寸手柄只在「尺寸」面板显示
 S.pane = 'tips';
 $('seg').querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -465,7 +485,8 @@ function bindHandle(h) {
   h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
 }
 
-chips($('quick'), QUICK, null, v => { $('feedback').value = v; });
+chips($('quick'), QUICK, null, v => { $('feedback').value = v; $('revise').click(); });
+$('feedback').onkeydown = e => { if (e.key === 'Enter') $('revise').click(); };
 $('revise').onclick = async () => {
   const fb = $('feedback').value.trim();
   if (!fb) return toast('先写一句想怎么改');
@@ -483,8 +504,6 @@ $('revise').onclick = async () => {
 // ---------- 材质 + 结算：旋转展示 + 材质/杆色 + 预估价格 ----------
 turntable = new Turntable($('turntable'));
 $('choose').onclick = () => choose();
-$('back-design').onclick = () => { show('s-design'); renderDesign(); };
-$('show-shoes').onchange = e => viewer.setShoes(e.target.checked);
 const estimate = () => Math.ceil((S.rows.reduce((t, r) => t + r.qty * r.price, 0) * MARKUP + LABOR) / 10) * 10;
 const matDot = v => rgba(BOARD_MATERIALS[v].color, Math.max(.5, BOARD_MATERIALS[v].opacity)), finDot = v => rgba(ROD_FINISHES[v]);
 // 选材质/杆色同时写回当前方案版本，回方案页再回来不丢
@@ -495,6 +514,7 @@ function fillLook() {
   renderRec();
 }
 function renderRec() {
+  $('pay-name').textContent = S.final.name || '我的鞋架'; $('fin-name').textContent = '· ' + S.final.rodFinish;
   const r = S.rec; $('rec').hidden = !r; if (!r) return;
   const same = r.shelfMaterial === S.final.shelfMaterial && r.rodFinish === S.final.rodFinish;
   $('rec-txt').textContent = r.ai ? `${r.style ? r.style + '，' : ''}配${r.shelfMaterial}隔板、${r.rodFinish}杆` : `常见搭配：${r.shelfMaterial}隔板、${r.rodFinish}杆`;
@@ -549,11 +569,14 @@ $('csv').onclick = () => {
 };
 // 保存方案：暂存浏览器 + 效果图（有照片时叠在照片上）用系统分享；不支持分享就弹出图片，长按保存
 $('order').onclick = async () => {
-  if (!S.sizeOk) return toast('先点一下「确认尺寸」');
-  try { localStorage.setItem('luojian.saved', JSON.stringify({ scheme: S.final, need: $('desc').value, at: Date.now() })); } catch {}
+  if (!S.sizeOk) { const r = document.querySelector('.size-row'); r.classList.remove('nudge'); void r.offsetWidth; r.classList.add('nudge'); return; }
   let canvas = turntable.renderer.domElement;
   const ph = S.photos[S.best || 0];
   if (ph) { viewer.setScheme(S.final); canvas = viewer.composite(ph.img); } else turntable.render();
+  const small = document.createElement('canvas'); small.width = 640; small.height = Math.round(640 * canvas.height / canvas.width);
+  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+  const key = JSON.stringify(S.final); // 同一方案再保存只留最新一条
+  storeList([{ id: Date.now(), scheme: S.final, need: $('desc').value, price: estimate(), img: small.toDataURL('image/jpeg', 0.75) }, ...loadList().filter(y => JSON.stringify(y.scheme) !== key)].slice(0, 12));
   const blob = await new Promise(d => canvas.toBlob(d, 'image/jpeg', 0.9)), file = new File([blob], '落间方案.jpg', { type: 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: '落间方案' }); return toast('方案已保存'); } catch (e) { if (e.name === 'AbortError') return toast('方案已保存'); }
@@ -561,6 +584,7 @@ $('order').onclick = async () => {
   URL.revokeObjectURL($('snap-img').src); $('snap-img').src = URL.createObjectURL(blob); $('snap-view').hidden = false;
 };
 $('snap-close').onclick = () => $('snap-view').hidden = true;
+$('snap-saved').onclick = () => { $('snap-view').hidden = true; show('s-saved'); };
 
 renderSteps();
 window.__app = { S, viewer, turntable, computeBOM, goStep }; // 方便调试
