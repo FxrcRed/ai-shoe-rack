@@ -10,12 +10,12 @@ const $ = id => document.getElementById(id);
 const yuan = n => '<small class="cur">¥</small>' + n.toLocaleString('zh-CN'); // 宜家标价样式：货币符号缩小
 let viewer, turntable; // 方案页才创建；先声明，避免它之前的代码出错时 show() 里引用到未初始化变量导致按钮全失效
 const S = {
-  photo: '', scene: null, placed: false, mock: true, rec: null, variant: 0, nag: 0, sizeOk: false,
+  page: 's-home', photo: '', scene: null, placed: false, mock: true, rec: null, variant: 0, nag: 0, 
   schemes: [],   // 只有 1 项：[{ versions: [scheme...], cur: 0 }]，「换一个」整个替换
   active: 0, final: null, rows: [], priceEdits: {}, offline: false,
 };
 const QUICK = ['再窄一点', '换玻璃隔板', '加一层', '加挂伞杆', '黑色杆', '杆粗一点'];
-const ORDER = ['s-photo', 's-design', 's-pay'];
+const ORDER = ['s-home', 's-photo', 's-design', 's-pay'];
 // 零件价格表只给管理员看：网址加 ?admin（前端开关，不是真正的权限控制）
 const ADMIN = new URLSearchParams(location.search).has('admin');
 // 给客户的预估价 = 零件参考价 × 加工系数 + 固定加工费，取整到 10 元
@@ -53,10 +53,10 @@ function show(id) {
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => show(b.dataset.go));
 
 // 顶部步骤条：走到过的步骤都能点回去（改了照片/需求后再往后走会按新的重新摆放）
-function canGo(k) { return k === 0 || S.schemes.length > 0; }
+function canGo(k) { return k <= 1 || S.schemes.length > 0; }
 function renderSteps() {
   const k = ORDER.indexOf(S.page);
-  $('stepbar').hidden = k < 0;
+  $('stepbar').hidden = k < 0; // 我的方案不显示
   [...$('stepbar').children].forEach((b, i) => {
     b.className = i <= k ? 'on' : '';
     b.disabled = i === k || !canGo(i);
@@ -64,9 +64,10 @@ function renderSteps() {
 }
 [...$('stepbar').children].forEach((b, i) => b.onclick = () => goStep(i));
 function goStep(i) {
-  if (i === 0) { show('s-photo'); renderPhotos(); }
-  else if (i === 1) enterDesign();
-  else if (i === 2) choose();
+  if (i === 0) show('s-home');
+  else if (i === 1) { show('s-photo'); renderPhotos(); }
+  else if (i === 2) enterDesign();
+  else if (i === 3) choose();
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
 
@@ -361,15 +362,20 @@ $('rot-ccw').onclick = () => turn(90);
 $('t-reset').onclick = () => viewer.scene0 && viewer.placeScene(viewer.scene0);
 // 分段切换控件面板；尺寸手柄只在「尺寸」面板显示
 S.pane = 'tips';
-$('seg').querySelectorAll('button').forEach(b => b.onclick = () => {
-  S.pane = b.dataset.pane;
-  $('seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-  document.querySelectorAll('#s-design .pane').forEach(p => p.hidden = p.dataset.pane !== S.pane);
+const setPane = name => {
+  S.pane = name;
+  $('seg').hidden = name === 'tips';
+  $('adjust').hidden = name === 'tips'; $('adjust').classList.toggle('primary', name !== 'tips'); $('s-design').classList.toggle('editing', name !== 'tips');
+  $('seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.pane === name));
+  document.querySelectorAll('#s-design .pane').forEach(p => p.hidden = p.dataset.pane !== name);
   placeHandles();
-});
+};
+$('tune').onclick = () => setPane('size');
+$('adjust').onclick = () => setPane('tips');
+$('seg').querySelectorAll('button').forEach(b => b.onclick = () => setPane(b.dataset.pane));
 const current = () => { const e = S.schemes[S.active]; return e.versions[e.cur]; };
 const pairs = s => { const l = shoeLayout(s); return `${l.male + l.female} 双（男 ${l.male} / 女 ${l.female}）`; }; // 按真实鞋子尺寸摆出来的双数
-const dimsShort = s => { const l = shoeLayout(s); return `${s.width}×${s.depth}×${s.height}cm · ${s.shelves.length} 层<br>可放 ${l.male + l.female} 双`; };
+const dimsShort = s => { const l = shoeLayout(s); return `约 <b>${s.width}×${s.depth}×${s.height}cm</b><br>${s.shelves.length} 层 · 可放约 ${l.male + l.female} 双`; };
 const dims = s => `${s.width}×${s.depth}×${s.height} cm · ${s.shelves.length} 层（离地 ${s.shelves.join('/')} cm）· 可放 ${pairs(s)} · Φ${s.rodDiameter} ${s.rodFinish} · ${s.shelfMaterial}隔板`
   + (s.hooks ? ` · 挂钩×${s.hooks}` : '') + (s.umbrella ? ' · 挂伞杆' : '');
 
@@ -451,9 +457,10 @@ function handleDefs(s) {
     ...s.shelves.map((h, i) => ({ k: 'shelf', i, at: [-W / 2, HD_FOOT + h / 100, z], ax: [0, 1, 0], mul: 1, label: `${h}cm`, l: true })),
   ];
 }
+const SHOW_HANDLES = false; // 照片上拖手柄先不做
 function placeHandles() {
   const box = $('handles');
-  const on = S.page === 's-design' && S.pane === 'size' && S.schemes.length > 0 && !!viewer.cur;
+  const on = S.page === 's-design' && SHOW_HANDLES && S.pane === 'size' && S.schemes.length > 0 && !!viewer.cur;
   box.hidden = !on; if (!on) return;
   const defs = handleDefs(viewer.cur);
   while (box.children.length > defs.length) box.lastChild.remove();
@@ -503,7 +510,9 @@ $('revise').onclick = async () => {
 
 // ---------- 材质 + 结算：旋转展示 + 材质/杆色 + 预估价格 ----------
 turntable = new Turntable($('turntable'));
-$('choose').onclick = () => choose();
+$('choose').onclick = () => {
+  choose();
+};
 const estimate = () => Math.ceil((S.rows.reduce((t, r) => t + r.qty * r.price, 0) * MARKUP + LABOR) / 10) * 10;
 const matDot = v => rgba(BOARD_MATERIALS[v].color, Math.max(.5, BOARD_MATERIALS[v].opacity)), finDot = v => rgba(ROD_FINISHES[v]);
 // 选材质/杆色同时写回当前方案版本，回方案页再回来不丢
@@ -514,30 +523,21 @@ function fillLook() {
   renderRec();
 }
 function renderRec() {
-  $('pay-name').textContent = S.final.name || '我的鞋架'; $('fin-name').textContent = '· ' + S.final.rodFinish;
-  const r = S.rec; $('rec').hidden = !r; if (!r) return;
+  const r = S.rec; $('rec-use').hidden = !r; if (!r) return;
   const same = r.shelfMaterial === S.final.shelfMaterial && r.rodFinish === S.final.rodFinish;
-  $('rec-txt').textContent = r.ai ? `${r.style ? r.style + '，' : ''}配${r.shelfMaterial}隔板、${r.rodFinish}杆` : `常见搭配：${r.shelfMaterial}隔板、${r.rodFinish}杆`;
-  $('rec-use').textContent = same ? '已采用' : '采用'; $('rec-use').disabled = same;
+  $('rec-use').textContent = same ? '已采用推荐' : `采用推荐：${r.shelfMaterial} + ${r.rodFinish.replace('色铝', '')}`; $('rec-use').disabled = same;
 }
 $('rec-use').onclick = () => { for (const o of [S.final, current()]) Object.assign(o, { shelfMaterial: S.rec.shelfMaterial, rodFinish: S.rec.rodFinish }); fillLook(); renderPay(); };
 function choose() {
-  S.final = { ...current() }; S.sizeOk = false;
+  S.final = { ...current() };
   show('s-pay'); fillLook(); renderPay();
   turntable.reset();
-}
-// 尺寸只靠门高估算，所以写「约」并让用户点一下确认；厂家下单前还会人工复核
-$('size-ok').onclick = () => { S.sizeOk = true; renderSize(); };
-function renderSize() {
-  const s = S.final, l = shoeLayout(s);
-  $('pay-size').innerHTML = `约 <b>${s.width}×${s.depth}×${s.height} cm</b> · 可放约 ${l.male + l.female} 双`;
-  $('size-ok').textContent = S.sizeOk ? '✓ 已确认' : '确认尺寸'; $('size-ok').disabled = S.sizeOk;
 }
 function renderPay() {
   const s = S.final, { rows } = computeBOM(s);
   for (const r of rows) if (r.name in S.priceEdits) r.price = S.priceEdits[r.name]; // 切材质/颜色时保留用户改过的单价
   S.rows = rows;
-  renderSize(); turntable.setScheme(s);
+  turntable.setScheme(s);
   const tb = $('bom').tBodies[0]; tb.innerHTML = '';
   rows.forEach(r => {
     const tr = document.createElement('tr');
@@ -569,7 +569,6 @@ $('csv').onclick = () => {
 };
 // 保存方案：暂存浏览器 + 效果图（有照片时叠在照片上）用系统分享；不支持分享就弹出图片，长按保存
 $('order').onclick = async () => {
-  if (!S.sizeOk) { const r = document.querySelector('.size-row'); r.classList.remove('nudge'); void r.offsetWidth; r.classList.add('nudge'); return; }
   let canvas = turntable.renderer.domElement;
   const ph = S.photos[S.best || 0];
   if (ph) { viewer.setScheme(S.final); canvas = viewer.composite(ph.img); } else turntable.render();

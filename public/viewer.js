@@ -39,11 +39,88 @@ function shoeParts(kind) {
   return shoeGeo[kind] = g;
 }
 
+
+// ---------- 写实材质：程序生成纹理 + 简易棚拍环境反射（不下载任何贴图）----------
+const hash = (x, y) => { const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); };
+const vnoise = (x, y) => {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  return hash(xi, yi) * (1 - u) * (1 - v) + hash(xi + 1, yi) * u * (1 - v) + hash(xi, yi + 1) * (1 - u) * v + hash(xi + 1, yi + 1) * u * v;
+};
+// 画布纹理：fn(x, y) 返回 [r,g,b]（0~1）；u 沿鞋架宽度（纹理方向），v 沿进深
+const texCache = {};
+function canvasTex(key, w, h, fn, srgb = true) {
+  if (texCache[key]) return texCache[key];
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'), img = cx.createImageData(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const [r, g, b] = fn(x, y), i = (y * w + x) * 4;
+    img.data[i] = Math.min(255, r * 255); img.data[i + 1] = Math.min(255, g * 255); img.data[i + 2] = Math.min(255, b * 255); img.data[i + 3] = 255;
+  }
+  cx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return texCache[key] = t;
+}
+const tint = (hex, k) => [((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k];
+// 木纹：年轮带 + 细纤维，纹理沿 x
+const woodTex = hex => canvasTex('wood' + hex, 512, 256, (x, y) => {
+  const warp = vnoise(x * 0.006, y * 0.05) * 7, ring = 0.5 + 0.5 * Math.sin(y * 0.16 + warp);
+  const fibre = vnoise(x * 0.015, y * 1.6), k = 0.62 + 0.26 * (ring * 0.55 + fibre * 0.45) + (hash(x, y) - 0.5) * 0.04;
+  return tint(hex, k);
+});
+// 拉丝纹（灰度）：沿 x 的细条，同时做粗糙度和凹凸
+const brushTex = () => canvasTex('brush', 256, 256, (x, y) => { const v = 0.55 + 0.4 * (vnoise(x * 0.01, y * 1.3) - 0.5) + 0.2 * (hash(0, y) - 0.5); return [v, v, v]; }, false);
+
+// 真实贴图（Poly Haven fine_grained_wood，CC0，已压到 512px 灰度）：加载前/失败都用上面的程序材质，加载完通知查看器重绘
+const realTex = {};
+function loadReal(file, srgb) {
+  if (realTex[file] !== undefined) return realTex[file];
+  realTex[file] = null;
+  new THREE.TextureLoader().load(new URL('./vendor/tex/' + file, import.meta.url).href, t => {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    realTex[file] = t; window.dispatchEvent(new Event('rack-tex'));
+  }, undefined, () => {});
+  return null;
+}
+
+const envCache = new WeakMap();
+function studioEnv(renderer) {
+  if (envCache.has(renderer)) return envCache.get(renderer);
+  const sc = new THREE.Scene();
+  sc.add(new THREE.Mesh(new THREE.BoxGeometry(10, 6, 10), new THREE.MeshBasicMaterial({ color: 0x8c8f96, side: THREE.BackSide })));
+  const panel = (w, h, pos, rot, lum) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(lum, lum, lum), side: THREE.DoubleSide })); m.position.set(...pos); m.rotation.set(...rot); sc.add(m); };
+  panel(5, 3, [-3, 2.5, 3], [0, Math.PI / 4 + Math.PI / 2, 0], 7); // 左前大柔光箱
+  panel(4, 2, [3.5, 2, -2], [0, -Math.PI / 3, 0], 4);              // 右后补光
+  panel(6, 4, [0, 2.9, 0], [Math.PI / 2, 0, 0], 3);                // 顶灯
+  const rt = new THREE.PMREMGenerator(renderer).fromScene(sc, 0.04).texture;
+  envCache.set(renderer, rt); return rt;
+}
+const ROD_LOOK = {
+  '银色铝': { metalness: 1, roughness: 0.32, brush: true },
+  '黑色': { metalness: 0.7, roughness: 0.42, color: 0x1c1c1e },
+  '白色': { metalness: 0.15, roughness: 0.3, clearcoat: 0.6 },
+  '金色': { metalness: 1, roughness: 0.3, color: 0xd6aa52, brush: true },
+};
+function rodMaterial(finish) {
+  const l = ROD_LOOK[finish] || ROD_LOOK['银色铝'];
+  return new THREE.MeshPhysicalMaterial({ color: l.color ?? ROD_FINISHES[finish], metalness: l.metalness, roughness: l.roughness, clearcoat: l.clearcoat || 0, roughnessMap: l.brush ? brushTex() : null });
+}
+function boardMaterial(name, bm) {
+  const base = { color: bm.color, transparent: bm.opacity < 1, opacity: bm.opacity };
+  if (name === '实木') {
+    const col = loadReal('wood_col.jpg', true), rough = loadReal('wood_rough.jpg', false);
+    if (col) return new THREE.MeshStandardMaterial({ ...base, map: col, bumpMap: col, bumpScale: 1.2, roughness: 1, roughnessMap: rough });
+    const t = woodTex(bm.color); return new THREE.MeshStandardMaterial({ ...base, color: 0xffffff, map: t, bumpMap: t, bumpScale: 1.2, roughness: 0.62 });
+  }
+  if (name === '金属板') return new THREE.MeshStandardMaterial({ ...base, color: 0xb8bec6, metalness: 0.7, roughness: 0.38, roughnessMap: brushTex(), bumpMap: brushTex(), bumpScale: 0.6 });
+  if (name === '玻璃') return new THREE.MeshPhysicalMaterial({ ...base, metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.6 });
+  return new THREE.MeshPhysicalMaterial({ ...base, metalness: 0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.2 }); // 亚克力
+}
+
 // 按方案建整个鞋架（含可选参照鞋），返回 { group, sk }；group 原点 = 占地中心、地面
 export function buildRack(s, { shoes = false } = {}) {
   const sk = buildSkeleton(s), { nodes } = analyzeSkeleton(sk), d = sk.d;
-  const metal = new THREE.MeshStandardMaterial({ color: ROD_FINISHES[s.rodFinish], metalness: 0.5, roughness: 0.35 });
-  const dark = new THREE.MeshStandardMaterial({ color: s.rodFinish === '黑色' ? 0x111111 : 0x55585e, metalness: 0.4, roughness: 0.5 });
+  const metal = rodMaterial(s.rodFinish);
+  const dark = new THREE.MeshStandardMaterial({ color: s.rodFinish === '黑色' ? 0x111111 : 0x55585e, metalness: 0.7, roughness: 0.45 });
   const g = new THREE.Group();
   g.position.set(-sk.W / 2 * MM, FOOT * MM, -sk.D / 2 * MM);
   const mesh = (geo, mat, pos) => { const m = new THREE.Mesh(geo, mat); m.position.set(...pos.map(v => v * MM)); m.castShadow = true; g.add(m); return m; };
@@ -61,7 +138,7 @@ export function buildRack(s, { shoes = false } = {}) {
     }
   }
   const bm = BOARD_MATERIALS[s.shelfMaterial];
-  const board = new THREE.MeshStandardMaterial({ color: bm.color, roughness: s.shelfMaterial === '玻璃' ? 0.05 : 0.7, metalness: s.shelfMaterial === '金属板' ? 0.6 : 0, transparent: bm.opacity < 1, opacity: bm.opacity });
+  const board = boardMaterial(s.shelfMaterial, bm);
   for (const h of s.shelves) mesh(new THREE.BoxGeometry((sk.W + d) * MM, bm.thickness * MM, (sk.D + d) * MM), board, [sk.W / 2, h * 10 + d / 2 + bm.thickness / 2, sk.D / 2]).receiveShadow = true;
   for (const p of sk.hooks) mesh(new THREE.TorusGeometry(18 * MM, 2.5 * MM, 6, 16, Math.PI * 1.3), dark, [p[0], p[1] - 22, p[2] + d]).rotation.z = Math.PI * 0.85;
   if (sk.umbrella) {
@@ -96,7 +173,9 @@ export class RackViewer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     stage.appendChild(this.renderer.domElement);
+    window.addEventListener('rack-tex', () => { if (this.cur) { this.setScheme(this.cur, true); this.render(); } });
     this.scene = new THREE.Scene();
+    this.scene.environment = studioEnv(this.renderer); this.scene.environmentIntensity = 0.55; // 叠在照片上，反射收着点
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.05, 50);
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x8a7a66, 1.6);
     this.scene.add(this.hemi);
@@ -411,13 +490,15 @@ export class Turntable {
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     el.appendChild(this.renderer.domElement);
+    window.addEventListener('rack-tex', () => { if (this.cur) this.setScheme(this.cur); });
     this.scene = new THREE.Scene();
+    this.scene.environment = studioEnv(this.renderer); this.scene.environmentIntensity = 0.4;
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.05, 30);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb0b0b8, 1.8));
-    const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(-1.5, 3, 2.5); key.castShadow = true;
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb0b0b8, 0.9));
+    const key = new THREE.DirectionalLight(0xffffff, 1.7); key.position.set(-1.5, 3, 2.5); key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024); Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 1.5, bottom: -1.5 }); key.shadow.radius = 4;
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.8); fill.position.set(2, 1.5, -1); this.scene.add(fill);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5); fill.position.set(2, 1.5, -1); this.scene.add(fill);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.ShadowMaterial({ opacity: 0.18 }));
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.scene.add(ground);
     this.spin = new THREE.Group(); this.scene.add(this.spin);
@@ -447,12 +528,14 @@ export class Turntable {
     el.addEventListener('wheel', e => { e.preventDefault(); this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.08 : 0.93), 0.35, 2.5); this.frame(); this.render(); }, { passive: false });
     new ResizeObserver(() => this.resize()).observe(el);
   }
-  reset() { this.tilt = 0.32; this.zoom = 1; this.vel = 0.006; this.spin.rotation.y = 0.5; this.frame(); }
+  reset() { this.tilt = 0.32; this.zoom = 0.78; this.vel = 0.0022; this.spin.rotation.y = 0.5; this.frame(); }
   resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight; if (!w || !h) return;
-    this.renderer.setSize(w, h, false); // false：不改画布 CSS 尺寸（CSS 已铺满），否则 ResizeObserver 会循环 this.camera.aspect = w / h; this.frame(); this.render();
+    this.renderer.setSize(w, h, false); // false：不改画布 CSS 尺寸（CSS 已铺满），否则 ResizeObserver 会循环
+    this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.frame(); this.render();
   }
   setScheme(s) {
+    this.cur = s;
     disposeTree(this.spin); this.spin.clear();
     const { group, sk } = buildRack(s);
     this.size = { W: sk.W * MM + (sk.umbrella ? 0.24 : 0), D: sk.D * MM, H: sk.H * MM + FOOT * MM };
@@ -469,9 +552,11 @@ export class Turntable {
   render() { this.renderer.render(this.scene, this.camera); }
   start() {
     if (this.running) return; this.running = true;
+    let last = performance.now();
     const tick = () => {
       if (!this.running) return;
-      if (!this.hold) { this.vel += ((Math.sign(this.vel) || 1) * 0.004 - this.vel) * 0.02; this.spin.rotation.y += this.vel; } // 惯性慢慢回到匀速自转
+      const now = performance.now(), k = Math.min(3, (now - last) / 16.7); last = now; // 按时间走，高刷屏不会转得更快
+      if (!this.hold) { this.vel += ((Math.sign(this.vel) || 1) * 0.0022 - this.vel) * 0.02 * k; this.spin.rotation.y += this.vel * k; } // 惯性慢慢回到匀速自转
       this.render(); requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

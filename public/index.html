@@ -9,7 +9,7 @@
 </head>
 <body class="home hub">
 <span id="mode" class="badge" hidden></span>
-<nav class="stepbar" id="stepbar" hidden><button aria-label="拍照"></button><button aria-label="方案"></button><button aria-label="材质与结算"></button></nav>
+<nav class="stepbar" id="stepbar" hidden><button aria-label="首页"></button><button aria-label="拍照"></button><button aria-label="方案"></button><button aria-label="材质与结算"></button></nav>
 
 <main>
 <section id="s-home" class="page hero">
@@ -17,21 +17,20 @@
   <p class="lead">拍一张照，先试住，再定制。</p></div>
   <div class="media">
   <svg class="hero-art" viewBox="9 0 160 136" aria-hidden="true">
-    <ellipse class="base" cx="90" cy="131" rx="64" ry="5"/>
     <g class="rods">
-      <path pathLength="1" style="--i:0" d="M36 16V128"/>
-      <path pathLength="1" style="--i:1" d="M124 16V128"/>
-      <path pathLength="1" style="--i:2" d="M54 6V118"/>
-      <path pathLength="1" style="--i:3" d="M142 6V118"/>
-      <path pathLength="1" style="--i:4" d="M36 16H124L142 6H54Z"/>
-      <path pathLength="1" style="--i:5" d="M36 56H124L142 46H54Z"/>
-      <path pathLength="1" style="--i:6" d="M36 96H124L142 86H54Z"/>
-      <path pathLength="1" style="--i:7" d="M36 128H124L142 118H54Z"/>
+      <path pathLength="1" style="--i:0" d="M36 128V16"/>
+      <path pathLength="1" style="--i:1" d="M124 128V16"/>
+      <path pathLength="1" style="--i:2" d="M54 118V6"/>
+      <path pathLength="1" style="--i:3" d="M142 118V6"/>
+      <path pathLength="1" style="--i:7" d="M36 16H124L142 6H54Z"/>
+      <path pathLength="1" style="--i:6" d="M36 56H124L142 46H54Z"/>
+      <path pathLength="1" style="--i:5" d="M36 96H124L142 86H54Z"/>
+      <path pathLength="1" style="--i:4" d="M36 128H124L142 118H54Z"/>
     </g>
     <g class="items">
-      <circle style="--i:0" cx="72" cy="44" r="8"/>
-      <circle style="--i:1" cx="106" cy="47" r="5"/>
-      <circle style="--i:2" cx="64" cy="84" r="10"/>
+      <circle style="--i:1" cx="72" cy="44" r="8"/>
+      <circle style="--i:2" cx="106" cy="47" r="5"/>
+      <circle style="--i:0" cx="64" cy="84" r="10"/>
     </g>
   </svg>
   </div>
@@ -39,42 +38,17 @@
 </section>
 
 <section id="s-photo" class="page" hidden>
-  <div class="head row-head"><button class="back" data-go="s-home" aria-label="返回"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button><h2>拍下要放鞋架的角落</h2></div>
   <div class="media">
   <label for="cam" class="guide">
-    <svg viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <g class="g-ln">
-        <path d="M53 0Q75 40 95 84M219 0Q212 42 205 84M95 84Q150 82 205 84"/>
-        <path d="M95 84Q94 176 97 269M205 84Q206 176 203 270"/>
-        <path d="M97 269Q50 312 0 361M203 270Q219 335 236 400"/>
-        <path d="M97 269H203"/>
-        <path d="M64 300Q140 298 211 300M33 330Q130 327 218 330M0 365Q110 361 227 365M83 283Q145 282 207 283" class="g-fine"/>
-        <path d="M111 270V124Q148 121 186 124V270M117 270V128Q149 126 181 128V270M117 128"/>
-        <path d="M128 139H170V152H128ZM142 139V152M156 139V152"/>
-        <path d="M128 209V161H147V209ZM156 209V161H172V209ZM128 262V218H147V262ZM156 262V218H172V262Z" class="g-fine"/>
-        <circle cx="176" cy="212" r="2.5"/><circle cx="177" cy="226" r="2"/>
-        <path d="M118 273Q150 268 184 273L182 285Q150 289 120 285Z"/>
-        <path d="M126 276L124 284M138 275L136 286M150 274L148 287M162 275L160 286M174 275L172 285" class="g-fine"/>
-        <path d="M120 20Q137 6 154 20M118 22Q137 30 156 22M137 6V0M122 21L152 21" />
-        <ellipse cx="137" cy="22" rx="19" ry="3"/>
-        <path d="M284 36Q285 220 284 400M292 28Q293 220 292 400"/>
-        <circle cx="80" cy="222" r="3"/>
-        <path d="M191 280H205V288H191ZM194 280V288M198 280V288M202 280V288" class="g-fine"/>
-        <path d="M50 336L104 302L113 318L66 347Z"/>
-        <path d="M60 332Q58 318 68 316L82 311Q88 318 84 326Q78 332 70 334ZM84 320Q84 306 96 306Q104 310 100 318Q94 322 88 324ZM70 342Q68 332 78 330L92 326Q98 332 94 338Q86 342 78 344ZM96 328Q98 316 108 316Q114 322 108 330Q102 332 98 332Z"/>
-        <path d="M72 322Q76 318 80 322M90 312Q94 308 98 312M80 336Q84 332 88 336" class="g-fine"/>
-      </g>
-      <g class="g-acc"><path d="M97 262Q50 304 0 345M203 262Q219 330 231 400"/></g>
-      <path class="g-mark" d="M20 52V20H52M280 52V20H248M20 348V380H52M280 348V380H248"/>
-    </svg>
-    <p class="guide-tip">竖着拍，拍进地面和墙脚线，拍到门更准</p>
+    <i class="sketch" aria-hidden="true"></i>
   </label>
   <div id="photos" class="photos"></div>
   <ol class="progress" id="gen-progress" hidden></ol>
   </div>
   <div class="row">
+    <p class="guide-tip">竖着拍，拍进地面和墙脚线，拍到门更准</p>
+    <label class="btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>相册<input id="pick" type="file" accept="image/*" multiple hidden></label>
     <label class="btn primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>拍照<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>
-    <label class="btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>从相册选<input id="pick" type="file" accept="image/*" multiple hidden></label>
   </div>
   <div id="after" hidden>
     <textarea id="desc" rows="1" placeholder="想要什么样的？可不填，如：想挂雨伞"></textarea>
@@ -87,24 +61,23 @@
     <div id="stage" class="stage"><img id="stage-photo" alt=""><div class="handles" id="handles"></div></div>
   </div></div>
   <div class="sheet">
-  <div class="seg" id="seg">
-    <button data-pane="tips" class="on">提示</button><button data-pane="size">尺寸</button><button data-pane="pos">位置</button><button data-pane="ai">修改</button>
+  <div class="seg" id="seg" hidden>
+    <button data-pane="size" class="on">尺寸</button><button data-pane="more">配件</button><button data-pane="pos">位置</button><button data-pane="ai">修改</button>
   </div>
   <div class="panes">
     <div class="pane tips" data-pane="tips">
-      <p id="scheme-intro" class="intro"></p>
-      <p class="pill check" id="check-msg" hidden></p>
+      <p id="scheme-intro" class="intro" hidden></p>
+      <div class="size-row"><span id="scheme-dims"></span><button id="tune">调整</button></div>      <p class="pill check" id="check-msg" hidden></p>
       <div class="pill fit-msg" id="fit-msg" hidden></div>
     </div>
     <div class="pane" data-pane="size" hidden>
       <div class="dial" data-k="width"><span>宽</span><button class="step" data-d="-5">−</button><input type="range" min="30" max="200" step="1"><button class="step" data-d="5">+</button><output></output></div>
       <div class="dial" data-k="depth"><span>深</span><button class="step" data-d="-1">−</button><input type="range" min="15" max="60" step="1"><button class="step" data-d="1">+</button><output></output></div>
       <div class="dial" data-k="height"><span>高</span><button class="step" data-d="-5">−</button><input type="range" min="25" max="200" step="1"><button class="step" data-d="5">+</button><output></output></div>
-      <div class="steppers">
-        <div class="stepper" data-k="levels"><span>层数</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
-        <div class="stepper" data-k="hooks"><span>挂钩</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
-      </div>
-      <p class="hint">也可以直接在照片上拖蓝点：右边改宽度、顶上改高度、左边每个点改那层隔板的高度。</p>
+      <div class="stepper" data-k="levels"><span>层数</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
+    </div>
+    <div class="pane" data-pane="more" hidden>
+      <div class="stepper" data-k="hooks"><span>挂钩</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
       <div class="opt-row"><span>杆径</span><div class="chips sm" id="rods"></div></div>
       <label class="toggle"><input type="checkbox" id="umb"> 挂伞杆 <span class="hint">（右侧伸出 12cm，带接水盘）</span></label>
     </div>
@@ -122,21 +95,19 @@
   </div>
   <div class="dock">
     <button id="another">换一个</button>
-    <p id="scheme-dims" class="dims"></p>
+    <button id="adjust" hidden>完成</button>
     <button class="primary" id="choose">就这个了</button>
   </div>
 </section>
 
 <section id="s-pay" class="page flow pay" hidden>
-  <div class="media tt"><div class="turntable" id="turntable"><span class="tt-hint">拖动旋转 · 双指缩放</span></div></div>
+  <div class="media tt"><div class="turntable" id="turntable"></div></div>
   <div class="sheet">
     <div class="panes">
-      <h2 id="pay-name"></h2>
-      <div class="rec" id="rec" hidden><span id="rec-txt"></span><button id="rec-use">采用</button></div>
-      <p class="label">隔板</p>
-      <div class="chips cards" id="mats" data-cards></div>
-      <div class="line"><p class="label">杆色 <span class="hint" id="fin-name"></span></p><div class="chips swatch" id="fins" data-dots></div></div>
-      <div class="size-row"><span id="pay-size"></span><button id="size-ok">确认尺寸</button></div>
+      <div class="grp"><div class="mhd"><p class="label">隔板</p><button id="rec-use" hidden></button></div>
+      <div class="chips cards" id="mats" data-cards></div></div>
+      <div class="grp"><div class="mhd"><p class="label">杆色</p></div>
+      <div class="chips swatch" id="fins" data-dots></div></div>
       <div id="admin-bom" hidden>
         <p class="label">零件价格表 <span class="hint">（仅管理员可见，单价可直接改）</span></p>
         <div class="table-wrap"><table id="bom"><thead><tr><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody></tbody></table></div>

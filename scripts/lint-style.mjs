@@ -9,6 +9,8 @@ const RULES = [
   ['字重', /(?<![\w-])font-weight:\s*([^;}]+)/g, v => ['400', '600', '800'].includes(v), '只用 400 / 600 / 800'],
   ['间距', /(?<![\w-])(?:margin|padding|gap|row-gap|column-gap)(?:-top|-right|-bottom|-left)?:\s*([^;}]+)/g,
     v => !v.replace(/calc\(\(100% - 680px\)[^)]*\)/g, '').match(/(?<![\w.-])-?(?!0px|1px)\d+(\.\d+)?px/), '用 --s1…--s6（4/8/12/16/24/32）'],
+  ['位置', /(?<![\w-])(?:inset|top|right|bottom|left):\s*([^;}]+)/g,
+    v => !v.match(/(?<![\w.-])-?(?!0px|1px)\d+(\.\d+)?px/), '用 --a / --b / --frame-in 或 --s1…--s6（版式总纲）'],
   ['圆角', /(?<![\w-])border-radius:\s*([^;}]+)/g, v => /^(var\(--r-\w+\)|50%|0)$/.test(v), '用 --r-xl/lg/md/sm/pill 或 50%'],
   ['文字颜色', /(?<![\w-])color:\s*([^;}]+)/g, v => /^(var\(--[\w-]+\)|inherit|currentColor|transparent|#fff)$/.test(v), '用 var(--ink)/var(--muted) 等颜色变量'],
 ];

@@ -16,12 +16,11 @@
 export const ROD_DIAMETERS = [6, 8, 10, 12, 16, 20];
 export const BOARD_MATERIALS = {
   '实木': { thickness: 18, color: 0xb07a4a, opacity: 1, pricePerM2: 300 },
-  '竹': { thickness: 15, color: 0xd9b46a, opacity: 1, pricePerM2: 200 },
   '玻璃': { thickness: 8, color: 0xa8d8dc, opacity: 0.35, pricePerM2: 250 },
   '金属板': { thickness: 2, color: 0x5d6168, opacity: 1, pricePerM2: 180 },
   '亚克力': { thickness: 6, color: 0xf4f4f4, opacity: 0.6, pricePerM2: 220 },
 };
-export const ROD_FINISHES = { '银色铝': 0xc9ccd1, '黑色': 0x2b2b2b, '白色': 0xeeeeee, '金色': 0xc8a25a };
+export const ROD_FINISHES = { '银色铝': 0xc9ccd1, '黑色': 0x2b2b2b };
 export const MIN_GAP = 12;          // 相邻隔板最小间距 cm
 export const UMBRELLA_OUT = 12;     // 挂伞杆向侧面伸出 cm
 export const MID_SUPPORT_OVER = 90; // 宽度超过此值(cm)，每层隔板下加中间托杆

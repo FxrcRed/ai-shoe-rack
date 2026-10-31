@@ -11,8 +11,8 @@ const STYLE = {
   '木地板暖色': { mat: '实木', fin: '黑色' },
   '现代简约': { mat: '玻璃', fin: '银色铝' },
   '工业风': { mat: '金属板', fin: '黑色' },
-  '奶油风': { mat: '实木', fin: '白色' },
-  '日式原木': { mat: '竹', fin: '金色' },
+  '奶油风': { mat: '实木', fin: '银色铝' },
+  '日式原木': { mat: '实木', fin: '黑色' },
 };
 
 export function mockGenerate(req) {
@@ -45,8 +45,8 @@ export function mockRevise(req) {
   else if (/(减|少)一?层/.test(f) && s.shelves.length > 1) { s.height = s.shelves[s.shelves.length - 2]; s.shelves = s.shelves.slice(0, -1); notes.push('减一层'); }
   else if (/矮|低/.test(f)) { const k = (s.height - step) / s.height; s.height -= step; s.shelves = s.shelves.map(h => h * k); notes.push('变矮'); }
   else if (/高/.test(f)) { const k = (s.height + step) / s.height; s.height += step; s.shelves = s.shelves.map(h => h * k); notes.push('变高'); }
-  for (const m of ['玻璃', '实木', '竹', '金属板', '亚克力']) if (f.includes(m) || (m === '金属板' && /金属|铁板|钢板/.test(f))) { s.shelfMaterial = m; notes.push('换' + m); break; }
-  for (const [k, v] of [['黑', '黑色'], ['白', '白色'], ['金', '金色'], ['银', '银色铝']]) if (new RegExp(k + '色?(杆|架|的)').test(f)) { s.rodFinish = v; notes.push('杆改' + v); }
+  for (const m of ['玻璃', '实木', '金属板', '亚克力']) if (f.includes(m) || (m === '金属板' && /金属|铁板|钢板/.test(f))) { s.shelfMaterial = m; notes.push('换' + m); break; }
+  for (const [k, v] of [['黑', '黑色'], ['银', '银色铝']]) if (new RegExp(k + '色?(杆|架|的)').test(f)) { s.rodFinish = v; notes.push('杆改' + v); }
   if (/伞/.test(f)) { s.umbrella = !not; notes.push(not ? '去掉挂伞杆' : '加挂伞杆'); }
   if (/挂钩|钩子/.test(f)) { s.hooks = not ? 0 : s.hooks + 2; notes.push(not ? '去掉挂钩' : '加挂钩'); }
   const i = ROD_DIAMETERS.indexOf(s.rodDiameter);
