@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>落间</title>
-<meta name="theme-color" content="#f5f5f5">
+<meta name="theme-color" content="#d1d4e5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121217" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="home hub">
@@ -49,10 +50,10 @@
     <p class="guide-tip">竖着拍，拍进地面和墙脚线，拍到门更准</p>
     <label class="btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>相册<input id="pick" type="file" accept="image/*" multiple hidden></label>
     <label class="btn primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>拍照<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>
-  </div>
-  <div id="after" hidden>
-    <textarea id="desc" rows="1" placeholder="想要什么样的？可不填，如：想挂雨伞"></textarea>
-    <button class="primary big" id="gen" disabled>生成方案</button>
+    <div id="after" hidden>
+      <textarea id="desc" rows="1" placeholder="想要什么样的？可不填，如：想挂雨伞"></textarea>
+      <button class="primary big" id="gen" disabled>生成方案</button>
+    </div>
   </div>
 </section>
 
@@ -79,7 +80,7 @@
     <div class="pane" data-pane="more" hidden>
       <div class="stepper" data-k="hooks"><span>挂钩</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
       <div class="opt-row"><span>杆径</span><div class="chips sm" id="rods"></div></div>
-      <label class="toggle"><input type="checkbox" id="umb"> 挂伞杆 <span class="hint">（右侧伸出 12cm，带接水盘）</span></label>
+      <label class="toggle"><input type="checkbox" id="umb"> 挂伞杆 <span class="hint">右侧伸出 12cm，带接水盘</span></label>
     </div>
     <div class="pane" data-pane="pos" hidden>
       <div class="row tight"><button id="rot-ccw">↺ 向左转</button><button id="rot-cw">↻ 向右转</button><button id="t-reset">按 AI 重新摆放</button></div>
@@ -87,7 +88,7 @@
     </div>
     <div class="pane" data-pane="ai" hidden>
       <div class="versions" id="versions"></div>
-      <input id="feedback" placeholder="例如：再窄一点、换玻璃隔板、加一层">
+      <input id="feedback" placeholder="例如：再窄一点、加一层、加挂钩">
       <div class="chips sm" id="quick"></div>
       <div class="row end"><button id="revise">让 AI 修改</button></div>
     </div>
@@ -108,6 +109,7 @@
       <div class="chips cards" id="mats" data-cards></div></div>
       <div class="grp"><div class="mhd"><p class="label">杆色</p></div>
       <div class="chips swatch" id="fins" data-dots></div></div>
+      <div class="grp" id="dims-row"><div class="mhd"><p class="label">尺寸</p><button id="dims-ok"></button></div></div>
       <div id="admin-bom" hidden>
         <p class="label">零件价格表 <span class="hint">（仅管理员可见，单价可直接改）</span></p>
         <div class="table-wrap"><table id="bom"><thead><tr><th>名称</th><th>规格</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody></tbody></table></div>

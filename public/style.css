@@ -16,7 +16,7 @@
      xl 32 − 应用页卡片内边距 s3(12) = 舞台/转盘 lg 20；输入框/小卡片 md 12；里面的小件 sm 8；按钮胶囊 pill */
   --r-xl: 32px; --r-lg: 20px; --r-md: 12px; --r-sm: 8px; --r-pill: 980px;
   --glass-float: rgba(255, 255, 255, .72); --rim: inset 0 0 0 1px rgba(28, 27, 36, .06);
-  --blobs: none;
+  --blobs: none; --dot-rim: rgba(0, 0, 0, .12); /* 色点描边：深色模式下换浅色，黑色杆色点才看得见 */
   /* 字号 6 档（参考 iOS 字号阶梯；输入框 ≥16px，否则 iPhone 聚焦时页面会放大）；字重只用 400 / 600 / 800 */
   /* 间距 6 档：标题与说明 s2、按钮之间 s3；不要写死 px（scripts/lint-style.mjs 会查） */
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
@@ -33,14 +33,14 @@
     --bg: #121217; --card: #1e1e26; --ink: #f5f5f8; --muted: #bbbbc4; --faint: #8c8c96; --line: #34343e;
     --blush: #2b2326; --fill: #26262f; --fill2: #30303a; --accent: #ff7a52; --accent-hover: #ff9370; --accent-ink: #111111;
     --navy: #a0a0e0; --navy-ink: #0e0e14; --ok: #3fb950; --ok-ink: #3fb950; --bad: #ff4d7d; --bar: rgba(14, 14, 14, .78);
-    --shadow: none; --glass-float: rgba(28, 28, 28, .72); --rim: inset 0 0 0 1px rgba(255, 255, 255, .08);
+    --shadow: none; --dot-rim: rgba(255, 255, 255, .24); --glass-float: rgba(28, 28, 28, .72); --rim: inset 0 0 0 1px rgba(255, 255, 255, .08);
   }
 }
 :root[data-theme="dark"] {
   --bg: #121217; --card: #1e1e26; --ink: #f5f5f8; --muted: #bbbbc4; --faint: #8c8c96; --line: #34343e;
   --blush: #2b2326; --fill: #26262f; --fill2: #30303a; --accent: #ff7a52; --accent-hover: #ff9370; --accent-ink: #111111;
   --navy: #a0a0e0; --navy-ink: #0e0e14; --ok: #3fb950; --ok-ink: #3fb950; --bad: #ff4d7d; --bar: rgba(14, 14, 14, .78);
-  --shadow: none; --glass-float: rgba(28, 28, 28, .72); --rim: inset 0 0 0 1px rgba(255, 255, 255, .08);
+  --shadow: none; --dot-rim: rgba(255, 255, 255, .24); --glass-float: rgba(28, 28, 28, .72); --rim: inset 0 0 0 1px rgba(255, 255, 255, .08);
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -53,7 +53,6 @@ main { max-width: 680px; margin: 0 auto; padding: var(--a) var(--a) 0; }
 /* --chrome = 页面上下被占掉的高度（流程页：步骤条 24 + main 上留白 a；首页/我的方案：上下留白） */
 :root { --chrome: 29px; } /* lint-ok 步骤条 13 + 上留白 a */
 :root:has(body.hub) { --chrome: 32px; } /* lint-ok main 上 16 + 下 16 */
-:root:has(body.home) { --chrome: 45px; } /* lint-ok 首页多一条步骤条 13 */
 body.hub main { padding-top: var(--a); }
 
 /* 后台标签：只在 ?admin 显示，不占版面 */
@@ -63,7 +62,9 @@ body.hub main { padding-top: var(--a); }
 /* 页面骨架：没有顶栏、没有整页大白卡；图放粉米圆角底块，白卡只给成组内容 */
 .page { display: flex; flex-direction: column; gap: var(--a); height: calc(100vh - var(--chrome)); height: calc(100dvh - var(--chrome)); min-height: 440px; position: relative; } /* lint-ok 最小高度 */
 .page[hidden] { display: none; }
-#s-saved { height: auto; min-height: 0; }
+/* 我的方案：标题和 logo 按钮落在首页大卡片里的同一位置，切换时不跳；列表在页面内部滚动 */
+#s-saved .head { padding: var(--a) var(--a) 0; }
+#s-saved .hubbtn { top: var(--a); right: var(--a); }
 .head h1 { display: flex; align-items: center; gap: var(--s3); margin: 0; font-size: var(--fs-display); line-height: 1.1; font-weight: 800; letter-spacing: -.035em; }
 .head .lead { margin: var(--s2) 0 0; }
 .row-head { display: flex; align-items: center; gap: var(--s3); }
@@ -159,7 +160,7 @@ td input { width: 64px; padding: var(--s1) var(--s2); font-size: var(--fs-aux); 
 #s-photo > .row > .btn { flex: 1 1 0; justify-content: center; text-align: center; }
 #s-photo > .row > .btn.primary { flex-grow: 1.618; } /* lint-ok 黄金比例 */
 #s-photo > .row > .btn:not(.primary) { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
-#s-photo:has(.photos:not(:empty)) .row .primary { background: var(--fill); color: var(--ink); }
+#s-photo:has(.photos:not(:empty)) .row > .btn.primary { background: var(--fill); color: var(--ink); }
 #s-photo:has(.photos:not(:empty)) .guide-tip { display: none; }
 .guide { position: absolute; inset: 0; cursor: pointer; }
 #s-photo:has(.photos:not(:empty)) .guide { display: none; }
@@ -185,7 +186,9 @@ td input { width: 64px; padding: var(--s1) var(--s2); font-size: var(--fs-aux); 
 .ph .redo { padding: var(--s1) var(--s3); font-size: var(--fs-note); background: var(--navy); color: var(--navy-ink); }
 
 /* 拍照页：可选需求输入 */
-#after { display: flex; flex-direction: column; gap: var(--s3); }
+/* 需求框和「生成方案」放进相册/拍照同一张卡片，间距同为 a */
+#after { display: contents; }
+#after > * { flex: 1 0 100%; }
 #s-photo textarea { height: 48px; resize: none; overflow: hidden; }
 #s-photo { padding-bottom: var(--a); }
 
@@ -263,7 +266,7 @@ body.appmode .toast { bottom: 104px; } /* lint-ok 操作条之上 */
 .row.tight { gap: var(--s2); }
 .row.tight button { font-size: var(--fs-aux); }
 .intro { font-size: var(--fs-body); }
-.toggle { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-body); flex-wrap: wrap; }
+.toggle { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-aux); flex-wrap: wrap; }
 .toggle .hint { margin: 0; font-size: var(--fs-note); }
 .fit-msg { font-size: var(--fs-aux); color: var(--ink); background: var(--fill); border-radius: var(--r-md); padding: var(--s3); display: flex; gap: var(--s3); align-items: center; flex-wrap: wrap; }
 .fit-msg.warn { color: var(--bad); }
@@ -315,7 +318,7 @@ body.appmode .toast { bottom: 104px; } /* lint-ok 操作条之上 */
 .pay .sheet { flex: none; }
 .pay .panes { padding-bottom: 112px; } /* lint-ok 给浮动操作条留位 */
 .snap-view { position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s4); padding: var(--s4); background: var(--bg); }
-.snap-view button { width: 100%; max-width: 320px; } /* lint-ok 弹层按钮整宽 */
+.snap-view button { width: 100%; max-width: 440px; height: var(--h-lg); padding-top: 0; padding-bottom: 0; } /* lint-ok 弹层按钮整宽，手机上和图片同宽 */
 .snap-view[hidden] { display: none; }
 .snap-view img { max-width: 100%; max-height: 68dvh; border-radius: var(--r-lg); }
 .snap-view p { margin: 0; font-size: var(--fs-aux); color: var(--muted); }
@@ -331,7 +334,7 @@ body.appmode .toast { bottom: 104px; } /* lint-ok 操作条之上 */
 /* 步骤条：页面最顶上三段细条，走到过的可点回去 */
 .stepbar { position: sticky; top: 0; z-index: 4; display: flex; align-items: stretch; gap: var(--s2); height: calc(var(--s2) + 5px); padding: 0 max(var(--s4), calc((100% - 680px) / 2 + var(--s4))); } /* lint-ok 盒子底边 = 细线底边，量间距才准 */
 .stepbar button { position: relative; flex: 1; padding: 0; background: none; border-radius: 0; }
-.stepbar button::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--s3); } /* 点击区向下伸进留白，凑够约 25px */
+.stepbar button::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: calc(44px - 100%); } /* lint-ok 点击区向下伸到 44px（会盖住下方图片顶部约 15px） */
 .stepbar button::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; border-radius: var(--r-pill); background: var(--fill2); transition: background .3s; } /* lint-ok 细线贴底 */
 .stepbar button.on::after { background: var(--navy); }
 .stepbar button:disabled { opacity: 1; cursor: default; }
@@ -355,7 +358,7 @@ body.appmode .toast { bottom: 104px; } /* lint-ok 操作条之上 */
 .chips.swatch { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .chips.swatch::-webkit-scrollbar { display: none; }
 .chips.swatch button { flex: none; display: inline-flex; align-items: center; gap: var(--s2); padding-left: var(--s2); }
-.dot { flex: none; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
+.dot { flex: none; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--dot-rim); }
 .chips.swatch button.on .dot { box-shadow: 0 0 0 1.5px var(--navy-ink); }
 .btn > svg, button > svg:not(:only-child) { vertical-align: -4px; margin-right: var(--s2); }
 [hidden] { display: none !important; }
@@ -367,7 +370,9 @@ body.appmode .toast { bottom: 104px; } /* lint-ok 操作条之上 */
 body.hub main { padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom)); }
 
 /* 我的方案列表：左粉米缩略图，右名称 / 规格 / 价格 + 小深色「查看」 */
-.saved { display: flex; flex-direction: column; gap: var(--s3); }
+.saved { flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s3); margin: 0 calc(-1 * var(--a)); padding: 0 var(--a) var(--a); scrollbar-width: none; } /* 负边距让阴影不被滚动区裁掉 */
+.saved::-webkit-scrollbar { display: none; }
+.saved:empty { justify-content: center; }
 .saved:empty::after { content: '保存后的方案会出现在这里'; padding: var(--s6) 0; font-size: var(--fs-aux); color: var(--muted); text-align: center; }
 .saved-item { position: relative; display: flex; gap: var(--s3); align-items: center; padding: var(--s3); border-radius: var(--r-xl); background: var(--card); box-shadow: var(--shadow); cursor: pointer; }
 .saved-item img { flex: none; width: 96px; height: 96px; object-fit: cover; border-radius: var(--r-lg); background: var(--blush); } /* lint-ok 缩略图尺寸 */
@@ -375,6 +380,14 @@ body.hub main { padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom)); }
 .saved-item b { display: block; font-size: var(--fs-body); font-weight: 800; }
 .saved-item .meta { margin: var(--s1) 0 var(--s2); font-size: var(--fs-aux); color: var(--muted); }
 .saved-item .amt { font-size: var(--fs-sub); font-weight: 800; }
-.saved-item .view { position: absolute; right: var(--s3); bottom: var(--s3); padding: var(--s2) var(--s4); background: var(--navy); color: var(--navy-ink); }
+.saved-item .view { position: absolute; right: var(--s3); bottom: var(--s3); height: var(--h-sm); padding: 0 var(--s4); background: var(--navy); color: var(--navy-ink); }
 .saved-item .x.arm { width: auto; padding: 0 var(--s3); border-radius: var(--r-pill); background: var(--accent); color: var(--accent-ink); font-size: var(--fs-note); font-weight: 600; }
-.saved-item .x { position: absolute; top: var(--s1); right: var(--s1); width: 44px; height: 44px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--muted); font-size: var(--fs-body); line-height: 1; } /* lint-ok 删除钮 */
+.saved-item .x { position: absolute; top: var(--s3); right: var(--s3); width: 32px; height: 32px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--muted); font-size: var(--fs-body); line-height: 1; } /* lint-ok 删除钮 */
+
+/* 结算页确认尺寸：没确认时用主色描边提醒 */
+#dims-ok.todo { background: var(--card); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* 小控件看起来不变，点击区补到 44（透明热区，照 hubbtn 的做法） */
+.ph .redo, #fins button, .versions button { position: relative; } /* .ph .x 和「查看」本来就是 absolute */
+.ph .x::before, .saved-item .x::before, .ph .redo::before, #fins button::before, .versions button::before, .saved-item .view::before { content: ''; position: absolute; top: 50%; left: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%); } /* lint-ok 最小点击区 44 */
+.toggle { min-height: 44px; } /* lint-ok 最小点击区 44 */

@@ -258,8 +258,9 @@ export class RackViewer {
     this.door = this.doorFrom(s.door);
     // 有墙脚点：鞋架背面贴墙，中心 = 墙脚点 + 正面方向 × (进深/2 + 1cm)，换方案时按新进深重算
     let wallP = s.base && this.floorAt(s.base);
-    this.roomFrom(s, wallP);
-    const side = this.walls.find(w => w.side === s.wall);
+    this.wallSide = this.roomFrom(s, wallP);
+    if (this.wallSide !== s.wall) this.t.rot = (s.roomAz ?? 0) + { left: 90, back: 0, right: -90 }[this.wallSide];
+    const side = this.walls.find(w => w.side === this.wallSide);
     if (side) wallP = side.p.clone().addScaledVector(side.t, wallP ? wallP.clone().sub(side.p).dot(side.t) : 0.7); // 投到这面墙推算出的墙脚线上（AI 墙脚点只用来定沿墙的位置）
     this.anchor = wallP ? { p: wallP, p0: wallP.clone(), front: new THREE.Vector3(Math.sin(R(this.t.rot)), 0, Math.cos(R(this.t.rot))) } : null;
     if (this.anchor) return this.fitAnchor();
@@ -282,32 +283,63 @@ export class RackViewer {
   // ---------- 墙和家具：都变成地面上的禁区 ----------
   // 墙 = 半平面 {p 墙脚线上一点, n 朝屋内, t 沿墙}；墙角点 + 房间朝向（几何检测的墙面方向）→ 后墙和侧墙墙脚线
   // 家具 = AI 给的最近落地边打到地面，往远离相机方向补上长度、靠墙的补到墙 → 凸包
+  // 返回鞋架靠的墙：AI 的 wall 标签常和它给的点对不上（实测说「左墙」点却在后墙门前），按点离哪面已知墙近来定
   roomFrom(s, wallP) {
     const R = THREE.MathUtils.degToRad(s.roomAz ?? (s.yaw || 0)), F = new THREE.Vector3(Math.sin(R), 0, Math.cos(R)), T = new THREE.Vector3(Math.cos(R), 0, -Math.sin(R));
     this.walls = []; this.obstacles = [];
+    const N = { back: F, left: T, right: T.clone().negate() }, TAN = { back: T, left: F.clone().negate(), right: F.clone().negate() };
     // 每面墙的墙脚线取最可靠的来源：门洞底边（门就开在墙上，AI 点门最准）> 墙角点 > AI 给的墙脚点（常点在家具前沿）
-    const line = { left: null, right: null, back: null }, D = this.door;
+    const line = { left: null, right: null, back: null }, D = this.door, src = {};
     if (D) {
       const mid = D.H.clone().add(D.L).multiplyScalar(0.5);
-      if (Math.abs(D.u.dot(T)) > 0.94) line.back = mid;
-      else if (Math.abs(D.u.dot(F)) > 0.94) line[mid.dot(T) < 0 ? 'left' : 'right'] = mid;
+      const k = Math.abs(D.u.dot(T)) > 0.94 ? 'back' : Math.abs(D.u.dot(F)) > 0.94 ? (mid.dot(T) < 0 ? 'left' : 'right') : null;
+      if (k) { line[k] = mid; src[k] = 'door'; }
     }
+    // AI 给的墙脚线两点：连线和房间朝向（几何检测）差 >30° 说明点错了（实测会把门槛标成侧墙），不用；
+    // 墙的位置按离相机近的那点算（同样偏 1% 画面，远处在地面上差得多）。试过两点不一致时取更靠墙外的点：合成图上更差
+    for (const k of ['back', 'left', 'right']) {
+      const P = (s.wallLines?.[k] || []).map(q => this.floorAt(q)).filter(Boolean);
+      if (src[k] === 'line' || P.length < 2) continue;
+      if (Math.abs(P[1].clone().sub(P[0]).normalize().dot(TAN[k])) < Math.cos(THREE.MathUtils.degToRad(30))) continue;
+      const q = P[0].length() < P[1].length() ? P[0] : P[1];
+      // 门推出的墙和墙脚线差 0.4m 以上：门多半开在别的墙上（实测侧墙上开着的门被当成后墙的门，后墙跑到相机脚下）
+      if (line[k] && src[k] === 'door' && Math.abs(q.clone().sub(line[k]).dot(N[k])) < 0.4) continue;
+      line[k] = q; src[k] = 'line';
+    }
+    const corners = {};
     for (const k of ['left', 'right']) {
       const c = s.corner?.[k] && this.floorAt(s.corner[k]); if (!c) continue;
-      // 侧墙：墙角点常被家具挡住点偏；和 AI 墙脚点（要求点在墙前地面上）比，取更靠屋内的——偏屋内只是离墙一点，偏外会嵌进墙
-      const n = T.clone().multiplyScalar(k === 'left' ? 1 : -1);
-      line[k] = line[k] || (s.wall === k && wallP && wallP.clone().sub(c).dot(n) > 0 ? wallP.clone() : c);
-      line.back = line.back || c;
+      corners[k] = c;
+      if (!line.back) { line.back = c; src.back = 'corner'; }
     }
-    if (wallP && s.wall in line) line[s.wall] = line[s.wall] || wallP.clone();
-    if (line.back) this.walls.push({ side: 'back', p: line.back, n: F.clone(), t: T.clone() });
-    if (line.left) this.walls.push({ side: 'left', p: line.left, n: T.clone(), t: F.clone().negate() });
-    if (line.right) this.walls.push({ side: 'right', p: line.right, n: T.clone().negate(), t: F.clone().negate() });
+    // AI 点属于哪面墙：已知墙里点在墙前 0~0.6m（或略在墙后 0.3m 内）且最近的那面；都不沾就信 AI 的标签
+    let side = ['left', 'back', 'right'].includes(s.wall) ? s.wall : 'back';
+    if (wallP) {
+      const known = Object.entries({ ...line, ...Object.fromEntries(Object.entries(corners).map(([k, c]) => [k, line[k] || c])) }).filter(([, p]) => p);
+      const near = known.map(([k, p]) => [k, wallP.clone().sub(p).dot(N[k])]).filter(([, d]) => d > -0.3 && d < 0.6).sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]))[0];
+      if (near) side = near[0];
+    }
+    for (const k of ['left', 'right']) {
+      const c = corners[k]; if (!c || line[k]) continue;
+      // 侧墙：墙角点常被家具挡住点偏；和 AI 墙脚点（要求点在墙前地面上）比，取更靠屋内的——偏屋内只是离墙一点，偏外会嵌进墙
+      line[k] = side === k && wallP && wallP.clone().sub(c).dot(N[k]) > 0 ? wallP.clone() : c; src[k] = 'corner';
+    }
+    if (wallP && !line[side]) { line[side] = wallP.clone(); src[side] = 'base'; }
+    const P0 = (s.obstacles || []).map(o => o.pts.map(q => this.floorAt(q)).filter(Boolean));
+    for (const k of ['back', 'left', 'right']) {
+      if (!line[k]) continue;
+      // 墙不能切进家具：家具最近落地边（AI 给得最准）必须在墙前，否则把墙往外推（门定的墙不动）
+      if (src[k] !== 'door') {
+        const inside = Math.min(0.05, ...P0.flat().map(q => q.clone().sub(line[k]).dot(N[k])));
+        if (inside < 0.05) line[k] = line[k].clone().addScaledVector(N[k], inside - 0.05);
+      }
+      this.walls.push({ side: k, p: line[k], n: N[k].clone(), t: TAN[k].clone(), src: src[k] });
+    }
     const axes = [F, T, F.clone().negate(), T.clone().negate()];
-    for (const o of s.obstacles || []) {
-      const P = o.pts.map(q => this.floorAt(q)).filter(Boolean); if (!P.length) continue;
+    (s.obstacles || []).forEach((o, i) => {
+      const P = P0[i]; if (!P.length) return;
       // 太小的（落地边 <25cm 且进深 <25cm，多半是地上的鞋/包）不算障碍，随手就能挪走
-      if (o.depth < 0.25 && (P.length < 2 || P[0].distanceTo(P[P.length - 1]) < 0.25)) continue;
+      if (o.depth < 0.25 && (P.length < 2 || P[0].distanceTo(P[P.length - 1]) < 0.25)) return;
       // AI 给的是离相机最近的那条落地边（最准）→ 往远离相机方向（最接近的房间轴向）补上它说的长度；离墙 0.5m 以内再补到最近那面墙
       const away = P.reduce((a, q) => a.add(q), new THREE.Vector3()).setY(0).normalize();
       const d = axes.reduce((b, a) => a.dot(away) > b.dot(away) ? a : b).clone().multiplyScalar(o.depth);
@@ -316,7 +348,8 @@ export class RackViewer {
       if (near) pts = pts.concat(pts.map(q => q.clone().addScaledVector(near.n, -q.clone().sub(near.p).dot(near.n))));
       if (P.length === 1) pts.push(...[[1, 0], [0, 1], [1, 1]].map(([i, j]) => P[0].clone().addScaledVector(T, (i - 0.5) * 0.4).addScaledVector(d, j)));
       this.obstacles.push({ name: o.name, poly: hull(pts) });
-    }
+    });
+    return side;
   }
   // 地面点是否在禁区：墙后、家具里（各留 3cm），门扇扫过的扇形（向内开，两侧都算）+ 门洞前 0.9m 的通道
   blocked(p) {
@@ -343,18 +376,28 @@ export class RackViewer {
   // 贴墙放：压到门的开启范围、家具、墙角就沿墙滑开（取最近、仍在画面里的位置）；这面墙放不下就换其他已知的墙；都不行算这面墙最多放多宽
   fitAnchor() {
     const off = (this.depthM || 0.3) / 2 + 0.01, A = this.anchor, rot0 = this.t.rot;
-    const inView = q => { const v = q.clone().project(this.camera); return v.z < 1 && Math.abs(v.x) < 0.95 && Math.abs(v.y) < 1; };
+    // 鞋架背面两角要在画面里；靠近相机的一端被画面底边裁掉一点没关系（照片里常见），只要正面中点还在画面内
+    const inView = (q, low = 1) => { const v = q.clone().project(this.camera); return v.z < 1 && Math.abs(v.x) < 0.95 && v.y < 1 && v.y > -low; };
     const geo = (p0, front) => { const tan = new THREE.Vector3(front.z, 0, -front.x); return { p0, front, tan, at: sh => p0.clone().addScaledVector(tan, sh).addScaledVector(front, off) }; };
-    const fits = ({ tan, at }, sh, W = this.widthM) => { const q = at(sh); return !this.footprintBlocked(q.x, q.z, W) && inView(q.clone().addScaledVector(tan, W / 2)) && inView(q.clone().addScaledVector(tan, -W / 2)); };
+    const fits = ({ tan, front, at }, sh, W = this.widthM) => {
+      const q = at(sh), b = q.clone().addScaledVector(front, -off);
+      return !this.footprintBlocked(q.x, q.z, W) && inView(b.clone().addScaledVector(tan, W / 2)) && inView(b.clone().addScaledVector(tan, -W / 2))
+        && inView(q.clone().addScaledVector(tan, W / 2), 1.3) && inView(q.clone().addScaledVector(tan, -W / 2), 1.3) && inView(q.clone().addScaledVector(front, off));
+    };
     const search = (g, W) => { for (let k = 0; k <= 300; k++) { const sh = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.02; if (fits(g, sh, W)) return sh; } return null; };
     this.fitNote = ''; this.suggestW = null;
     let g = geo(A.p0, A.front), best = this.hasZones() ? search(g) : 0;
-    // 这面墙放不下：试其他推算出的墙（AI 选的墙常常没空地）；都放不下就在所有墙里找能放下的最大宽度
+    // 其他推算出的墙也试（AI 选的墙常常没空地）：选沿墙挪得最少的（换墙记 0.4m），挪太远的位置和 AI 本意无关，容易落到门口；都放不下就在所有墙里找能放下的最大宽度
     const cands = [{ g, rot: rot0, side: '' }];
     for (const w of this.walls || []) if (w.n.dot(A.front) < 0.9)
       cands.push({ g: geo(w.p.clone().addScaledVector(w.t, A.p0.clone().sub(w.p).dot(w.t)), w.n.clone()), rot: THREE.MathUtils.radToDeg(Math.atan2(w.n.x, w.n.z)), side: w.side });
     const use = (c, sh) => { this.t.rot = c.rot; g = c.g; best = sh; Object.assign(A, { p0: c.g.p0, front: c.g.front }); if (c.side) this.fitNote = `原来那面墙放不下，改靠${{ left: '左', right: '右', back: '正对' }[c.side]}墙`; };
-    if (best === null) for (const c of cands.slice(1)) { this.t.rot = c.rot; const sh = search(c.g); if (sh !== null) { use(c, sh); break; } }
+    if (best === null || Math.abs(best) > 0.4) {
+      let top = best === null ? null : { c: cands[0], sh: best, cost: Math.abs(best) };
+      for (const c of cands.slice(1)) { this.t.rot = c.rot; const sh = search(c.g); if (sh !== null && (!top || Math.abs(sh) + 0.4 < top.cost)) top = { c, sh, cost: Math.abs(sh) + 0.4 }; }
+      this.t.rot = rot0;
+      if (top && top.c !== cands[0]) use(top.c, top.sh);
+    }
     if (best === null) {
       let top = null;
       for (const c of cands) { this.t.rot = c.rot; for (let W = this.widthM - 0.05; W >= 0.3 && !(top && W <= top.W); W -= 0.05) { const sh = search(c.g, W); if (sh !== null) { top = { c, sh, W }; break; } } }

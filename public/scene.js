@@ -52,23 +52,64 @@ export function shrink(img, max = 1024) {
   return c.toDataURL('image/jpeg', 0.8);
 }
 
-// 参照物算相机高度：同一竖直物体（门边）的顶点 top、地面点 bottom（照片 0~1 坐标）+ 已知高 H（米）
-// 按 viewer 的相机姿态（pitch 由地平线定、roll）把两点变成世界射线：底点射线打到地面 = h·b/(-b.y)，
-// 顶点沿它的射线走到同一水平位置时高度 = H → h = H / (1 + k·t.y)。算不出返回 null
-export function camHFromRef(top, bottom, { hfov, aspect, horizonY, roll = 0 }, H = 2.05) {
-  if (!Array.isArray(top) || !Array.isArray(bottom) || ![...top, ...bottom].every(Number.isFinite)) return null;
-  if (!(bottom[1] > horizonY + 0.02) || !(bottom[1] - top[1] > 0.03)) return null; // 底点要在地平线下，顶点在底点上方
+// 照片点（0~1）→ 世界射线方向：相机在原点朝 -z，pitch 由地平线定（向下为正）、roll 同 viewer
+function rayOf([u, v], { hfov, aspect, horizonY, roll = 0 }) {
   const th = Math.tan(hfov * Math.PI / 360), tv = th / aspect, p = Math.atan((0.5 - horizonY) * 2 * tv), r = roll * Math.PI / 180;
-  const ray = ([u, v]) => {
-    let x = (u * 2 - 1) * th, y = (1 - v * 2) * tv, z = -1;
-    [x, y] = [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];   // Rz(roll)
-    [y, z] = [y * Math.cos(p) + z * Math.sin(p), -y * Math.sin(p) + z * Math.cos(p)];  // Rx(-pitch)
-    return [x, y, z];
-  };
-  const b = ray(bottom), t = ray(top);
+  let x = (u * 2 - 1) * th, y = (1 - v * 2) * tv, z = -1;
+  [x, y] = [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];   // Rz(roll)
+  [y, z] = [y * Math.cos(p) + z * Math.sin(p), -y * Math.sin(p) + z * Math.cos(p)];  // Rx(-pitch)
+  return [x, y, z];
+}
+
+// 参照物算相机高度：同一竖直物体（门边）的顶点 top、地面点 bottom（照片 0~1 坐标）+ 已知高 H（米）
+// 底点射线打到地面 = h·b/(-b.y)，顶点沿它的射线走到同一水平位置时高度 = H → h = H / (1 + k·t.y)。算不出返回 null
+export function camHFromRef(top, bottom, cam, H = 2.05) {
+  if (!Array.isArray(top) || !Array.isArray(bottom) || ![...top, ...bottom].every(Number.isFinite)) return null;
+  if (!(bottom[1] > cam.horizonY + 0.02) || !(bottom[1] - top[1] > 0.03)) return null; // 底点要在地平线下，顶点在底点上方
+  const b = rayOf(bottom, cam), t = rayOf(top, cam);
   if (!(b[1] < 0)) return null;
   const k = (b[0] * t[0] + b[2] * t[2]) / (-b[1]) / (t[0] * t[0] + t[2] * t[2]), den = 1 + k * t[1];
   return den > 0.05 ? H / den : null;
+}
+
+// 门洞底边两端（地面点）在相机高 1m 时的间距；门宽已知 → 相机高 = 门宽 / 它
+function floorGap(p, q, cam) {
+  const a = rayOf(p, cam), b = rayOf(q, cam);
+  if (!(a[1] < -1e-3 && b[1] < -1e-3)) return null;
+  return Math.hypot(a[0] / -a[1] - b[0] / -b[1], a[2] / -a[1] - b[2] / -b[1]);
+}
+
+// 相机高度：AI 直接估（常差 15%，当先验）、门高 2.05m、门宽约 0.88m 三个来源按各自误差加权（逆方差）
+// 每个来源的误差 = 点偏 1% 画面时结果变多少：门顶贴近地平线（站着俯拍）时门高法很敏感，门宽法就占主导
+const DOOR_H = 2.05, DOOR_W = 0.88, PT = 0.01;
+export function camHeight(a, cam) {
+  // 贴画面边缘（3% 内）的点多半是物体被裁掉、AI 把点钳在了边上（实测门顶在画面外时它给 y=0 而不是 null）
+  const ok = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite) && p[0] > 0.03 && p[0] < 0.97 && p[1] > 0.03 && p[1] < 0.97;
+  const est = [{ src: 'ai', h: Math.min(2.2, Math.max(0.3, Number.isFinite(+a.cameraHeight) ? +a.cameraHeight : 1.35)), s: 0.3 }];
+  const jitter = (f, pts) => { // f(pts) 对每个点上下左右偏 PT 的变化，平方和开根
+    const h0 = f(pts); if (!h0) return null; let v = 0;
+    pts.forEach((p, i) => [[PT, 0], [0, PT]].forEach(([du, dv]) => {
+      const q = pts.map((x, j) => j === i ? [x[0] + du, x[1] + dv] : x), h1 = f(q);
+      v += h1 ? (h1 - h0) ** 2 : h0 * h0;
+    }));
+    return { h: h0, s: Math.sqrt(v) };
+  };
+  if (ok(a.doorTop) && ok(a.doorBottom)) {
+    const r = jitter(([t, b]) => camHFromRef(t, b, cam, DOOR_H), [a.doorTop.map(Number), a.doorBottom.map(Number)]);
+    if (r && r.h > 0.3 && r.h < 2.2) est.push({ src: 'door', h: r.h, s: Math.max(0.03, r.s) });
+  }
+  const d = a.door;
+  if (d && ok(d.hinge) && ok(d.latch)) {
+    const r = jitter(([p, q]) => { const g = floorGap(p, q, cam); return g ? DOOR_W / g : null; }, [d.hinge.map(Number), d.latch.map(Number)]);
+    if (r && r.h > 0.3 && r.h < 2.2) est.push({ src: 'doorW', h: r.h, s: Math.hypot(r.s, r.h * 0.09) }); // 门宽本身 ±9%（0.8~0.95m）
+  }
+  // 门高、门宽差太多（>35%）多半是 AI 点错了一个：只信误差小的那个
+  const dh = est.find(e => e.src === 'door'), dw = est.find(e => e.src === 'doorW');
+  if (dh && dw && Math.abs(Math.log(dh.h / dw.h)) > 0.3) est.splice(est.indexOf(dh.s > dw.s ? dh : dw), 1);
+  let W = 0, H = 0;
+  for (const e of est) { W += 1 / e.s ** 2; H += e.h / e.s ** 2; }
+  const best = est.reduce((b, e) => e.s < b.s ? e : b);
+  return { h: H / W, src: est.length > 1 ? est.filter(e => e.src !== 'ai').map(e => e.src).join('+') : 'ai', parts: est.map(e => `${e.src}:${e.h.toFixed(2)}±${e.s.toFixed(2)}`).join(' '), best: best.src };
 }
 
 // AI 结果（或 null）+ 几何检测结果 geo（或 null）+ 照片信息 → placeScene 参数
@@ -105,6 +146,15 @@ export function toScene(ai, { f35, aspect, geo, hfov, light }) {
     if (geo?.hlines?.length) c = snapTo(c, geo.hlines.filter(l => l[4]), aspect, 0.03) || c;
     corner[k] = c;
   }
+  // 每面墙的墙脚线两点：吸附到附近同方向的检测线段（后墙 = 横向线，侧墙 = 纵深线），要在地平线以下
+  const wallLines = {};
+  for (const k of ['left', 'back', 'right']) {
+    const l = a.walls?.[k]; if (!Array.isArray(l)) continue;
+    let ps = l.map(pt).filter(q => q && q[1] > horizonY + 0.02);
+    const hl = geo?.hlines?.filter(h => h[4] === (k === 'back')) || [];
+    if (ps.length === 2 && hl.length) ps = snapLine(ps, hl, aspect, 0.02) || ps.map(q => snapTo(q, hl, aspect, 0.02) || q);
+    if (ps.length === 2 && Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1]) > 0.03) wallLines[k] = ps;
+  }
   // 家具/障碍物的落地点（AI 偶尔仍会把地上的鞋/包列进来：按名字再过滤一次，太小的在 viewer 里按面积过滤）
   const obstacles = (Array.isArray(a.obstacles) ? a.obstacles : []).slice(0, 8).map(o => ({
     name: String(o?.name || '').slice(0, 12), depth: num(o?.depth, 0.05, 1.5, 0.4),
@@ -112,16 +162,15 @@ export function toScene(ai, { f35, aspect, geo, hfov, light }) {
   })).filter(o => o.pts.length && !MOVABLE.test(o.name));
   const spot = [];
   hfov = hfov || hfovOf(f35 || LENS_MM[a.lens] || LENS_MM.main, aspect);
-  // 相机高度：照片里有门就按门高 2.05m 几何推算（AI 直接估常差 15%），算出离谱值才退回 AI 估值
+  // 相机高度：门高、门宽、AI 估值加权（见 camHeight）；没有几何检测时姿态不可信，只用 AI 估值
   const roll = geo ? num(geo.roll, -15, 15, 0) : 0;
-  const hDoor = geo ? camHFromRef(a.doorTop, a.doorBottom, { hfov, aspect, horizonY, roll }) : null;
-  const camHSrc = hDoor && hDoor > 0.3 && hDoor < 2.2 ? 'door' : 'ai';
+  const ch = geo ? camHeight(a, { hfov, aspect, horizonY, roll }) : { h: num(a.cameraHeight, 0.3, 2.2, 1.35), src: 'ai', parts: '' };
   return {
-    hfov, camHSrc, camHAi: a.cameraHeight,
-    camH: camHSrc === 'door' ? hDoor : num(a.cameraHeight, 0.3, 2.2, 1.35),
+    hfov, camHSrc: ch.src, camHAi: a.cameraHeight, camHParts: ch.parts,
+    camH: ch.h,
     horizonY, roll,
     spot: [num(spot[0], 0.05, 0.95, 0.5), num(spot[1], Math.max(0.05, horizonY + 0.08), 0.98, Math.max(0.72, horizonY + 0.2))],
-    base, wall, yaw, roomAz: yaw - turn, corner, obstacles, aspect, note: a.note || '', ai: !!ai, geo: geo ? geo.src : '',
+    base, wall, yaw, roomAz: yaw - turn, corner, wallLines, obstacles, aspect, note: a.note || '', issue: typeof a.issueBest === 'string' ? a.issueBest.slice(0, 30) : '', ai: !!ai, geo: geo ? geo.src : '',
     light: mergeLight(a.light, light),
     door: doorOf(a.door),
   };
@@ -140,6 +189,19 @@ function snapTo(p, lines, aspect, tol) {
   return best;
 }
 
+// 两点整体吸附到一条检测线段所在的直线上（两点到直线的平均距离 < tol，取最近的那条），点沿直线方向的位置不变
+// 比逐点吸附稳：踢脚线上下沿、地砖缝都是平行线，逐点吸附两点可能落到不同的线上
+function snapLine(ps, lines, aspect, tol) {
+  let best = null, bd = tol;
+  for (const [x1, y1, x2, y2] of lines) {
+    const ax = x1 * aspect, dx = (x2 - x1) * aspect, dy = y2 - y1, L = Math.hypot(dx, dy); if (L < 0.03) continue;
+    const ux = dx / L, uy = dy / L, dist = q => Math.abs((q[0] * aspect - ax) * uy - (q[1] - y1) * ux);
+    const d = (dist(ps[0]) + dist(ps[1])) / 2;
+    if (d < bd) { bd = d; best = ps.map(q => { const t = (q[0] * aspect - ax) * ux + (q[1] - y1) * uy; return [(ax + t * ux) / aspect, y1 + t * uy]; }); }
+  }
+  return best;
+}
+
 // 照片好不好用（本地几何检查，选完立刻出结果）：{ ok, msg, score }
 export function photoQuality(img, geo) {
   const c = document.createElement('canvas'); c.width = c.height = 32;
@@ -151,7 +213,7 @@ export function photoQuality(img, geo) {
   if (!geo) return { ok: false, level: 'warn', msg: '没找到地面和墙脚的直线，建议对着墙角、带上地面重拍', score: 0 };
   if (geo.horizonY > 0.8) return { ok: false, level: 'warn', msg: '地面拍得太少，建议手机再往下倾一点', score: 0 };
   if (geo.nSeg < 12 || geo.strength < 1.5) return { ok: false, level: 'warn', msg: '线条太少或太模糊，建议换个角度重拍', score: geo.strength };
-  if (geo.src === 'one-horizontal') return { ok: true, level: 'ok', msg: '可以用，透视线条偏少', score: geo.strength * 0.7 };
+  if (geo.src === 'one-horizontal') return { ok: true, level: 'ok', msg: '可以用', score: geo.strength * 0.7 };
   return { ok: true, level: 'ok', msg: '透视清楚', score: geo.strength };
 }
 

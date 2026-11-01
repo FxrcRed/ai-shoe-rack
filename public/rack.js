@@ -41,6 +41,7 @@ export function normalizeScheme(raw = {}, cons = {}) {
   s.intro = String(raw.intro || '').slice(0, 120);
   s.umbrella = raw.umbrella === true || raw.umbrella === 'true';
   const maxW = num(cons.maxWidth, 200) || 200, maxD = num(cons.maxDepth, 60) || 60, maxH = num(cons.maxHeight, 200) || 200;
+  if (s.umbrella && maxW - UMBRELLA_OUT - 2 < 30) s.umbrella = false; // 可用宽度连最窄架子 + 伞杆都放不下：去掉伞杆，不让总宽悄悄超限
   const umbW = s.umbrella ? UMBRELLA_OUT + 2 : 0;
   s.width = Math.round(clamp(num(raw.width, 80), 30, Math.max(30, Math.min(200, maxW - umbW))));
   s.depth = Math.round(clamp(num(raw.depth, 30), 15, Math.max(15, Math.min(60, maxD))));
@@ -59,11 +60,11 @@ export function normalizeScheme(raw = {}, cons = {}) {
     else if (s.shelves.length > 1) s.shelves.pop();
   }
   s.levels = s.shelves.length;
-  s.hooks = Math.round(clamp(num(raw.hooks, 0), 0, 10));
-  s.shelfMaterial = BOARD_MATERIALS[raw.shelfMaterial] ? raw.shelfMaterial : '实木';
+  s.hooks = Math.round(clamp(num(raw.hooks, 0), 0, Math.min(10, Math.floor(s.width / 6)))); // 挂钩间距至少约 6cm
+  s.shelfMaterial = Object.hasOwn(BOARD_MATERIALS, raw.shelfMaterial) ? raw.shelfMaterial : '实木';
   const d = num(raw.rodDiameter, 12);
   s.rodDiameter = ROD_DIAMETERS.reduce((p, c) => Math.abs(c - d) < Math.abs(p - d) ? c : p);
-  s.rodFinish = ROD_FINISHES[raw.rodFinish] ? raw.rodFinish : '银色铝';
+  s.rodFinish = Object.hasOwn(ROD_FINISHES, raw.rodFinish) ? raw.rodFinish : '银色铝';
   return s;
 }
 

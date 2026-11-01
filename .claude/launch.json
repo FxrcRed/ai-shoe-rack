@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "shoe-rack", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 8787 }
+    { "name": "shoe-rack", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 8787 },
+    { "name": "shoe-rack-eval", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 8788, "env": { "PORT": "8788" } }
   ]
 }

@@ -24,7 +24,11 @@ const env = {
   visionModel: process.env.SEMANTIX_VISION_MODEL || '', // 能识图的模型，逗号分隔可写多个（依次备用），用 node probe-vision.js 找
 };
 const PORT = +process.env.PORT || 8787;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.json': 'application/json; charset=utf-8' };
+// 照片评测（tools/photo-eval/，只在本机用）：评测页和测试照片按目录托管；识图原始结果按照片缓存，改合并/几何时重跑不花额度
+const EVAL = path.join(ROOT, 'tools', 'photo-eval'), DEV_DIRS = { '/eval/': EVAL, '/test-photos/': path.join(ROOT, 'test-photos') };
+const isLocal = req => /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress);
+const cacheFile = k => /^[\w.-]{1,80}$/.test(k || '') ? path.join(EVAL, 'cache', k + '.json') : null;
 
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); };
 const readBody = req => new Promise((ok, fail) => {
@@ -51,11 +55,13 @@ async function api(req, res, url) {
     }
   }
   // 识图调用：关思考（开着会把 token 全花在推理上且很慢）。网关偶尔报"暂时不可用"，最多试 3 次，轮流用列表里的模型
+  const stat = { calls: 0, tokens: 0 }; // 本次请求实际调用次数（含失败重试）和 token，评测用
   const vision = async (messages, tries = 3, timeout = 90000, temp = 0, start = 0) => {
     const models = env.visionModel.split(',').map(m => m.trim()).filter(Boolean);
     let err;
     for (let i = start; i < start + tries; i++) {
-      try { return await chat({ ...env, timeout, model: models[i % models.length] }, messages, temp, { thinking: { type: 'disabled' } }); }
+      stat.calls++;
+      try { const out = await chat({ ...env, timeout, model: models[i % models.length] }, messages, temp, { thinking: { type: 'disabled' } }); stat.tokens += out.usage?.total_tokens || 0; return out; }
       catch (e) { console.warn(`识图失败（${models[i % models.length]}）：${e.message.slice(0, 200)}`); err = err || e; await new Promise(r => setTimeout(r, 1500 * (i - start + 1))); }
     }
     throw err;
@@ -68,17 +74,28 @@ async function api(req, res, url) {
   }
   if (url.pathname === '/api/scene') {
     if (!body.image && !body.photos?.length) return send(res, 400, { error: '缺少照片' });
+    const cf = isLocal(req) && cacheFile(body.cacheKey), cached = cf && fs.existsSync(cf) && JSON.parse(fs.readFileSync(cf, 'utf8'));
+    if (cached) return send(res, 200, { scene: mergeScenes(cached.runs), runs: cached.runs.length, raw: cached.runs, ms: cached.ms, calls: cached.calls, tokens: cached.tokens, cached: true });
     if (!env.key || !env.visionModel) return send(res, 200, { scene: null, mock: true });
     try {
       // 单次识图的点和墙别波动很大：并发问 3 次（温度/模型不同）取共识，多花 API 额度换稳定
-      const msgs = buildSceneMessages(body), runs = (await Promise.allSettled([0, 1, 2].map(i => vision(msgs, 2, 90000, i ? 0.6 : 0, i))))
+      const t0 = Date.now(), msgs = buildSceneMessages(body), runs = (await Promise.allSettled([0, 1, 2].map(i => vision(msgs, 2, 90000, i ? 0.6 : 0, i))))
         .filter(r => r.status === 'fulfilled' && r.value && typeof r.value === 'object').map(r => r.value);
       if (!runs.length) throw new Error('3 次识图都失败');
       console.log(`识图共识：${runs.length} 次结果，墙 ${runs.map(r => r.wall).join('/')}`);
-      return send(res, 200, { scene: mergeScenes(runs), runs: runs.length, mock: false });
+      const ms = Date.now() - t0;
+      if (cf) { fs.mkdirSync(path.dirname(cf), { recursive: true }); fs.writeFileSync(cf, JSON.stringify({ runs, ms, ...stat })); }
+      return send(res, 200, { scene: mergeScenes(runs), runs: runs.length, mock: false, ...(cf ? { raw: runs, ms, ...stat } : {}) });
     } catch (e) {
       return send(res, 200, { scene: null, mock: true, warning: 'AI 识图失败，已按常见拍摄角度摆放：' + e.message });
     }
+  }
+  if (url.pathname === '/api/eval-save' && isLocal(req)) { // 评测结果：{ run, files: { 名字: JSON 对象或 dataURL 图片 } }
+    if (!/^[\w.-]{1,40}$/.test(body.run || '')) return send(res, 400, { error: 'run' });
+    const dir = path.join(EVAL, 'out', body.run); fs.mkdirSync(dir, { recursive: true });
+    for (const [k, v] of Object.entries(body.files || {})) if (/^[\w.-]{1,80}$/.test(k))
+      fs.writeFileSync(path.join(dir, k), typeof v === 'string' && v.startsWith('data:') ? Buffer.from(v.split(',')[1], 'base64') : JSON.stringify(v, null, 1));
+    return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/revise') {
     if (!body.scheme || !body.feedback) return send(res, 400, { error: '缺少 scheme 或 feedback' });
@@ -97,8 +114,9 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
-    const file = path.normalize(path.join(PUB, decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)));
-    if (!file.startsWith(PUB) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end('not found'); }
+    const dev = isLocal(req) && Object.keys(DEV_DIRS).find(d => url.pathname.startsWith(d)), base = dev ? DEV_DIRS[dev] : PUB;
+    const file = path.normalize(path.join(base, decodeURIComponent(dev ? url.pathname.slice(dev.length) || 'index.html' : url.pathname === '/' ? '/index.html' : url.pathname)));
+    if (!file.startsWith(base) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end('not found'); }
     const type = MIME[path.extname(file)] || 'application/octet-stream';
     // 文本类 gzip（three.module.js 1.3MB → ~300KB），走隧道/手机网络时快很多
     if (/text|javascript|json|svg/.test(type) && /gzip/.test(req.headers['accept-encoding'] || '')) {

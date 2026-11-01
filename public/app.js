@@ -14,7 +14,7 @@ const S = {
   schemes: [],   // 只有 1 项：[{ versions: [scheme...], cur: 0 }]，「换一个」整个替换
   active: 0, final: null, rows: [], priceEdits: {}, offline: false,
 };
-const QUICK = ['再窄一点', '换玻璃隔板', '加一层', '加挂伞杆', '黑色杆', '杆粗一点'];
+const QUICK = ['再窄一点', '矮一点', '加一层', '加挂伞杆', '杆粗一点']; // 只改形状和配件；材质、杆色在结算页选
 const ORDER = ['s-home', 's-photo', 's-design', 's-pay'];
 // 零件价格表只给管理员看：网址加 ?admin（前端开关，不是真正的权限控制）
 const ADMIN = new URLSearchParams(location.search).has('admin');
@@ -50,13 +50,20 @@ function show(id) {
   scrollTo(0, 0);
   viewer?.resize(); if (viewer) placeHandles();
 }
-document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => show(b.dataset.go));
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
+  if (b.dataset.go === 's-photo' && S.saved) newDesign(); // 存过方案后再「开始设计」= 从头来，不带上次的照片和需求
+  show(b.dataset.go);
+});
+function newDesign() {
+  S.photos.forEach(p => URL.revokeObjectURL(p.url)); S.photos = []; S.schemes = []; S.final = null; S.saved = false; S.nag = 0;
+  $('desc').value = ''; photosChanged();
+}
 
 // 顶部步骤条：走到过的步骤都能点回去（改了照片/需求后再往后走会按新的重新摆放）
 function canGo(k) { return k <= 1 || S.schemes.length > 0; }
 function renderSteps() {
   const k = ORDER.indexOf(S.page);
-  $('stepbar').hidden = k < 0; // 我的方案不显示
+  $('stepbar').hidden = k < 1; // 首页、我的方案不显示
   [...$('stepbar').children].forEach((b, i) => {
     b.className = i <= k ? 'on' : '';
     b.disabled = i === k || !canGo(i);
@@ -73,11 +80,11 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => show(b.da
 
 // 我的方案：存在浏览器里，最多 12 个，每个带一张效果图
 const LIST_KEY = 'luojian.list';
-function loadList() { try { return JSON.parse(localStorage.getItem(LIST_KEY)) || []; } catch { return []; } }
-function storeList(list) {
-  for (; ;) {
-    try { localStorage.setItem(LIST_KEY, JSON.stringify(list)); return; } catch { if (list.length <= 1) return; list.pop(); }
-  }
+function loadList() { // 存的数据坏了（不是数组、缺字段）就跳过坏的，不让页面卡死
+  try { const v = JSON.parse(localStorage.getItem(LIST_KEY)); return Array.isArray(v) ? v.filter(it => it && typeof it.scheme === 'object' && it.scheme && typeof it.img === 'string') : []; } catch { return []; }
+}
+function storeList(list) { // 存不下（存储满、隐私模式）返回 false，不悄悄删旧方案
+  try { localStorage.setItem(LIST_KEY, JSON.stringify(list)); return true; } catch { return false; }
 }
 function renderSaved() {
   const box = $('saved-list'); box.innerHTML = '';
@@ -88,7 +95,7 @@ function renderSaved() {
     d.querySelector('b').textContent = s.name;
     d.querySelector('.meta').textContent = `约 ${s.width}×${s.depth}×${s.height}cm · ${s.shelfMaterial}`;
     d.querySelector('.amt').innerHTML = yuan(it.price);
-    d.onclick = () => { S.schemes = [{ versions: [it.scheme], cur: 0 }]; S.active = 0; choose(); };
+    d.onclick = () => { S.schemes = [{ versions: [normalizeScheme(it.scheme)], cur: 0 }]; S.active = 0; choose(); };
     const x = d.querySelector('.x'); // 第一次点变成「删除」，再点才删
     x.onclick = e => {
       e.stopPropagation();
@@ -224,7 +231,7 @@ async function analyze(seq) {
   let light = null; try { light = photoLight(p.img, geo?.horizonY, hfov); } catch {}
   const opts = { f35: p.f35, aspect: p.aspect, geo, hfov, light };
   const scene = toScene(ai, opts);
-  scene.weak = !p.q.ok;
+  scene.weak = !p.q.ok || !!scene.issue; // 本地检查不过，或 AI 三次识图都建议重拍
   S.sceneCtx = ai ? { ai, opts, img: p.img, weak: scene.weak, seq } : null; // 给 AI 复查用
   return scene;
 }
@@ -244,7 +251,7 @@ async function enterDesign() {
 function placeScene(scene) {
   if (!scene) return;
   viewer.placeScene(scene); S.placed = true;
-  if (scene.weak) toast('照片里地面/墙脚线条不清楚，摆放可能不准，建议点「重拍照片」', 6000);
+  if (scene.weak) toast(`${scene.issue || '照片里地面/墙脚线条不清楚'}，摆放可能不准：可以手动拖动，或点顶部第 2 格回去重拍`, 6000);
   else if (scene.note) toast('AI：' + scene.note);
   checkPlacement();
 }
@@ -290,9 +297,9 @@ async function checkPlacement() {
   S.checking = false;
 }
 
-// 材质 / 风格 / 色卡推荐：只认能生产的 5 种隔板、4 种杆色；没有 AI 结果时给常见搭配
+// 材质 / 风格 / 色卡推荐：只认能生产的 4 种隔板、2 种杆色；没有 AI 结果时给常见搭配
 const DEFAULT_REC = { style: '常见搭配', shelfMaterial: '实木', rodFinish: '黑色', ai: false };
-const validRec = r => r && r.shelfMaterial in BOARD_MATERIALS && r.rodFinish in ROD_FINISHES
+const validRec = r => r && Object.hasOwn(BOARD_MATERIALS, r.shelfMaterial) && Object.hasOwn(ROD_FINISHES, r.rodFinish)
   ? { style: String(r.style || '').replace(/[<>&]/g, '').slice(0, 10), shelfMaterial: r.shelfMaterial, rodFinish: r.rodFinish, ai: true } : null;
 const cons = () => ({ maxWidth: undefined, maxDepth: undefined, maxHeight: undefined }); // 已去掉可用尺寸输入
 
@@ -326,11 +333,15 @@ $('gen').onclick = generate;
 // 换一个：整个替换成另一个思路的方案（点了才再生成）
 $('another').onclick = async () => {
   const btn = $('another'); btn.disabled = true; btn.textContent = '生成中…';
+  const e = S.schemes[S.active], old = current();
   try {
     const j = await post('api/generate', { description: $('desc').value, variant: ++S.variant, avoid: S.seen, ...cons() });
-    S.schemes = [{ versions: [j.schemes[0]], cur: 0 }]; S.seen.push(j.schemes[0].name); S.final = null;
+    if (S.schemes[S.active] !== e || S.page !== 's-design') throw 0; // 等结果时跳走了：丢掉，不写进别的方案
+    // 用户要过的伞杆、挂钩带过去；新方案作为新版本，想回上一个点 v1/v2
+    const ns = normalizeScheme({ ...j.schemes[0], umbrella: j.schemes[0].umbrella || old.umbrella, hooks: Math.max(j.schemes[0].hooks || 0, old.hooks) });
+    e.versions.push(ns); e.cur = e.versions.length - 1; S.seen.push(ns.name); S.final = null;
     renderDesign();
-  } catch (e) { oops('换方案失败了，请稍后再试一次', e.message); }
+  } catch (e) { if (e !== 0) oops('换方案失败了，请稍后再试一次', e.message); }
   btn.disabled = false; btn.textContent = '换一个';
 };
 
@@ -379,6 +390,19 @@ const dimsShort = s => { const l = shoeLayout(s); return `约 <b>${s.width}×${s
 const dims = s => `${s.width}×${s.depth}×${s.height} cm · ${s.shelves.length} 层（离地 ${s.shelves.join('/')} cm）· 可放 ${pairs(s)} · Φ${s.rodDiameter} ${s.rodFinish} · ${s.shelfMaterial}隔板`
   + (s.hooks ? ` · 挂钩×${s.hooks}` : '') + (s.umbrella ? ' · 挂伞杆' : '');
 
+// 改完说一句改了什么（尺寸行在「修改」分页里看不到）
+function changeNote(a, b) {
+  const n = [], la = shoeLayout(a), lb = shoeLayout(b);
+  if (a.width !== b.width || a.depth !== b.depth || a.height !== b.height) n.push(`约 ${b.width}×${b.depth}×${b.height}cm`);
+  if (a.shelves.length !== b.shelves.length || la.male + la.female !== lb.male + lb.female) n.push(`${b.shelves.length} 层 · 约 ${lb.male + lb.female} 双`);
+  if (a.umbrella !== b.umbrella) n.push(b.umbrella ? '加了挂伞杆' : '去掉挂伞杆');
+  if (a.hooks !== b.hooks) n.push(b.hooks ? `挂钩 ${b.hooks} 个` : '去掉挂钩');
+  if (a.rodDiameter !== b.rodDiameter) n.push(`杆径 Φ${b.rodDiameter}`);
+  if (a.shelfMaterial !== b.shelfMaterial) n.push(b.shelfMaterial + '隔板');
+  if (a.rodFinish !== b.rodFinish) n.push(b.rodFinish.replace('色铝', '') + '杆');
+  return n.length ? '已改：' + n.join(' · ') : '没听懂要改哪里，换个说法试试';
+}
+
 function renderDesign() {
   const s = current(), e = S.schemes[S.active];
   $('scheme-intro').textContent = s.intro;
@@ -390,7 +414,7 @@ function renderDesign() {
     b.onclick = () => { e.cur = i; renderDesign(); };
     v.appendChild(b);
   });
-  fillDims(s);
+  fillDims(s); renderQuick(s);
   viewer.setScheme(s);
   placeHandles();
 }
@@ -492,19 +516,22 @@ function bindHandle(h) {
   h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
 }
 
-chips($('quick'), QUICK, null, v => { $('feedback').value = v; $('revise').click(); });
+const renderQuick = s => chips($('quick'), QUICK.filter(q => !(q === '加挂伞杆' && s.umbrella)), null, v => { $('feedback').value = v; $('revise').click(); });
 $('feedback').onkeydown = e => { if (e.key === 'Enter') $('revise').click(); };
 $('revise').onclick = async () => {
   const fb = $('feedback').value.trim();
   if (!fb) return toast('先写一句想怎么改');
   const btn = $('revise'); btn.disabled = true; btn.textContent = '修改中…';
+  const e = S.schemes[S.active];
   try {
     const j = await post('api/revise', { scheme: current(), feedback: fb, description: $('desc').value, ...cons() });
-    const e = S.schemes[S.active];
+    if (S.schemes[S.active] !== e || S.page !== 's-design') throw 0; // 等结果时跳走了：丢掉，不贴到别的方案
+    const was = current();
     e.versions.push(j.scheme); e.cur = e.versions.length - 1;
+    toast(changeNote(was, j.scheme));
     $('feedback').value = ''; [...$('quick').children].forEach(c => c.className = '');
     renderDesign();
-  } catch (e) { oops('修改失败了，请稍后再试一次', e.message); }
+  } catch (err) { if (err !== 0) oops('修改失败了，请稍后再试一次', err.message); }
   btn.disabled = false; btn.textContent = '修改';
 };
 
@@ -525,11 +552,21 @@ function fillLook() {
 function renderRec() {
   const r = S.rec; $('rec-use').hidden = !r; if (!r) return;
   const same = r.shelfMaterial === S.final.shelfMaterial && r.rodFinish === S.final.rodFinish;
-  $('rec-use').textContent = same ? '已采用推荐' : `采用推荐：${r.shelfMaterial} + ${r.rodFinish.replace('色铝', '')}`; $('rec-use').disabled = same;
+  const word = r.ai ? '推荐' : '常见搭配'; // 没 AI 时是写死的搭配，不叫「推荐」
+  $('rec-use').textContent = same ? '已采用' + word : `采用${word}：${r.shelfMaterial} + ${r.rodFinish.replace('色铝', '')}`; $('rec-use').disabled = same;
 }
 $('rec-use').onclick = () => { for (const o of [S.final, current()]) Object.assign(o, { shelfMaterial: S.rec.shelfMaterial, rodFinish: S.rec.rodFinish }); fillLook(); renderPay(); };
+// 尺寸靠门高估，可能不准：让用户点一下确认，保存前没确认就抖一下这一行
+function renderDimsOk() {
+  const s = S.final, b = $('dims-ok');
+  b.textContent = (S.dimsOk ? '✓ ' : '') + `约 ${s.width}×${s.depth}×${s.height} cm` + (S.dimsOk ? '' : ' · 确认');
+  b.className = S.dimsOk ? '' : 'todo';
+}
+$('dims-ok').onclick = () => { S.dimsOk = !S.dimsOk; renderDimsOk(); };
 function choose() {
-  S.final = { ...current() };
+  const s = { ...current() };
+  if (!S.final || ['width', 'depth', 'height'].some(k => S.final[k] !== s[k])) S.dimsOk = false; // 尺寸变了要重新确认
+  S.final = s; renderDimsOk();
   show('s-pay'); fillLook(); renderPay();
   turntable.reset();
 }
@@ -569,13 +606,16 @@ $('csv').onclick = () => {
 };
 // 保存方案：暂存浏览器 + 效果图（有照片时叠在照片上）用系统分享；不支持分享就弹出图片，长按保存
 $('order').onclick = async () => {
+  if (!S.dimsOk) { const r = $('dims-row'); r.style.animation = 'none'; r.offsetWidth; r.style.animation = 'nudge .3s'; return; }
   let canvas = turntable.renderer.domElement;
   const ph = S.photos[S.best || 0];
   if (ph) { viewer.setScheme(S.final); canvas = viewer.composite(ph.img); } else turntable.render();
   const small = document.createElement('canvas'); small.width = 640; small.height = Math.round(640 * canvas.height / canvas.width);
   small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
   const key = JSON.stringify(S.final); // 同一方案再保存只留最新一条
-  storeList([{ id: Date.now(), scheme: S.final, need: $('desc').value, price: estimate(), img: small.toDataURL('image/jpeg', 0.75) }, ...loadList().filter(y => JSON.stringify(y.scheme) !== key)].slice(0, 12));
+  const ok = storeList([{ id: Date.now(), scheme: S.final, need: $('desc').value, price: estimate(), img: small.toDataURL('image/jpeg', 0.75) }, ...loadList().filter(y => JSON.stringify(y.scheme) !== key)].slice(0, 12));
+  if (!ok) return oops('手机存储满了，方案没存上。请到「我的方案」删掉几个旧的再试', 'localStorage setItem failed');
+  S.saved = true;
   const blob = await new Promise(d => canvas.toBlob(d, 'image/jpeg', 0.9)), file = new File([blob], '落间方案.jpg', { type: 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: '落间方案' }); return toast('方案已保存'); } catch (e) { if (e.name === 'AbortError') return toast('方案已保存'); }

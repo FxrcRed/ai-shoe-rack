@@ -28,9 +28,9 @@ export function mockGenerate(req) {
     { name: '紧凑两用', intro: `宽 ${a.w}cm 放 ${a.n} 层，约 ${a.n * per(a.w)} 双鞋${umb ? '，侧挂雨伞' : ''}，顶面放钥匙`, width: a.w, depth: D,
       height: 5 + (a.n - 1) * 18, shelves: evenShelves(a.n, 5 + (a.n - 1) * 18), hooks, umbrella: umb, shelfMaterial: st.mat, rodDiameter: 12, rodFinish: st.fin },
     { name: '高窄多层', intro: `占地窄，${b.n} 层竖向收纳，适合门后窄墙`, width: b.w, depth: Math.min(D, 30),
-      height: 5 + (b.n - 1) * 17, shelves: evenShelves(b.n, 5 + (b.n - 1) * 17), hooks, umbrella: false, shelfMaterial: st.mat, rodDiameter: 12, rodFinish: st.fin },
-    { name: '换鞋凳款', intro: '两层鞋 + 可坐的实木顶面，换鞋时能坐，杆径加粗承重', width: W, depth: D,
-      height: 45, shelves: [5, 25, 45], hooks: 0, umbrella: umb, shelfMaterial: '实木', rodDiameter: 16, rodFinish: st.fin },
+      height: 5 + (b.n - 1) * 17, shelves: evenShelves(b.n, 5 + (b.n - 1) * 17), hooks, umbrella: umb, shelfMaterial: st.mat, rodDiameter: 12, rodFinish: st.fin },
+    { name: '换鞋凳款', intro: '两层鞋 + 实木顶面，顶上能放包和钥匙，杆径加粗更稳', width: W, depth: D,
+      height: 45, shelves: [5, 25, 45], hooks, umbrella: umb, shelfMaterial: '实木', rodDiameter: 16, rodFinish: st.fin },
   ];
   return [normalizeScheme(raw[(req.variant || 0) % raw.length], cons)]; // 一次只出 1 个，「换一个」按 variant 轮换
 }

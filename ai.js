@@ -11,7 +11,7 @@ const FIELDS = `每个方案的字段（单位：尺寸 cm，杆径 mm）：
 - hooks: 顶部前横杆上的挂钩个数 0~10（挂钥匙、包）；用户没提到要挂钥匙/包/帽子/衣物就必须填 0（挂雨伞用 umbrella，不算挂钩）
 - umbrella: 是否在侧面加挂伞杆 true/false（伞尖立在地上的接水盘里，伞杆在顶下 5cm 挡住伞身，所以 height 需 ≥55）
 - shelfMaterial: 只能是 实木/玻璃/金属板/亚克力 之一
-- rodDiameter: 光轴杆径 mm，只能是 6/8/10/12/16/20 之一（常用 12~16，坐人的换鞋凳用 16~20）
+- rodDiameter: 光轴杆径 mm，只能是 6/8/10/12/16/20 之一（常用 12~16，宽或放重物用 16~20）
 - rodFinish: 杆件颜色，只能是 银色铝/黑色 之一
 估算容量：每层每 25cm 宽放 1 双鞋。`;
 
@@ -47,9 +47,10 @@ const SCENE = `你是室内摆放助手。看用户拍的同一个角落（玄�
 - best: 最适合展示摆放效果的照片编号（墙脚线清楚、地面拍得多、不模糊不过暗）。下面的 cameraHeight / lens / wall / wallBase / doorTop / doorBottom / door 都针对这一张
 - issues: 字符串数组，每张照片一项：照片有问题时写一句给用户的重拍建议（≤20 字，如「地面拍得太少，手机再往下倾一点」「太暗」「太模糊」「看不到墙脚」），没问题写 ""
 - cameraHeight: 相机离地高度（米）。站着手持一般 1.2~1.6，蹲着 0.5~0.9。多张照片可对照着判断。参考门（约 2.0~2.1m 高）、开关（约 1.3m）、地砖（常见 60 或 80cm）等的透视大小
-- doorTop / doorBottom: 照片里一扇门（入户门、房门，取最清楚、最完整的那扇）同一条竖直门边上的两个点 [x, y]：doorTop = 门扇顶边（门洞上沿，不含门头装饰）与门边的交点，doorBottom = 这条门边落到地面的点（门扇底边/地面交界）。两点都要在画面内清楚看得见；看不到完整的门（顶或底被裁掉、被挡住）就都写 null。程序会用标准门高 2.05m 按透视算相机高度，点要尽量准
+- doorTop / doorBottom: 照片里一扇门（入户门、房门，取最清楚、最完整的那扇）同一条竖直门边上的两个点 [x, y]：doorTop = 门扇顶边（门洞上沿，不含门头装饰）与门边的交点，doorBottom = 这条门边落到地面的点（门扇底边/地面交界）。两点都要在画面内清楚看得见；看不到完整的门（顶或底被裁掉、被挡住）就都写 null，不要把点写在画面边缘。程序会用标准门高 2.05m 按透视算相机高度，点要尽量准
 - door: 画面里离放鞋架的地方最近的那扇门（入户门/房门/柜门以外的门），{"hinge": [x, y], "latch": [x, y], "swing": "in" 或 "out"}。hinge = 门铰链（合页）那一侧门框落到地面的点，latch = 门锁/把手那一侧门框落到地面的点——两点就是门洞底边（门槛）的两端，都在地面上。看合页、把手位置判断哪边是铰链；门开着时铰链在门扇连着门框的那一边。swing：门朝拍照这一侧（屋内）开 = in，朝门外开 = out，看不出就 in。程序会按门宽算出门扇扫过的扇形，鞋架会自动避开。没有门或门底看不到写 null
 - corner: {"left": [x, y] 或 null, "right": [x, y] 或 null}：地面上的墙角点——正对相机的墙（后墙）的墙脚线与左侧墙 / 右侧墙的墙脚线相交处（三面交汇的那个角落落在地面上的点）。被家具挡住时按两条墙脚线的延长线推出交点；看不到侧墙或角落不在画面内写 null。程序用它和透视算出侧墙墙脚线，点要尽量准
+- walls: {"left": [[x, y], [x, y]] 或 null, "back": [[x, y], [x, y]] 或 null, "right": [[x, y], [x, y]] 或 null}：照片里每面看得见的墙的墙脚线（墙面与地面的交界线、踢脚线最底边）上的两个点，取清楚可见、没被家具挡住的两段，两点尽量隔开。back = 正对相机的墙（墙脚线在照片里接近水平）；left / right = 左侧 / 右侧的墙（墙脚线从近处斜着伸向远处）。看不见那面墙的墙脚线写 null。点要在画面内，看不全时取画面内看得见的部分，不要把点钳在画面边缘。程序用这两点和透视算出墙的位置，点要尽量准
 - obstacles: 数组，只列地面上固定/笨重、不会随手挪走的家具和建筑构件（柜子、鞋柜、桌子、长凳、柱子、暖气、大花盆、墙角凸出的墙垛等）。**不要列**随手能拿走的小物件：鞋子、拖鞋、靴子、包、伞、纸箱、快递、地垫、玩具、垃圾桶、小凳以外的零碎东西——它们会被收走，鞋架正是用来放鞋的，地上的鞋不算障碍。也不含门。每个 {"name": "鞋柜", "pts": [[x, y], [x, y]], "depth": 米}。pts = 它离相机最近的那条落地边的两端：物体贴着地板、在照片里最靠下的两个落地点——柜子取正面底边（踢脚）贴地的左右两端，桌子/凳子/椅子取靠近相机的两条腿的最下端。一定是贴着地板的点，绝不是台面、凳面、柜顶的角；depth = 从这条边往远离相机方向物体还有多长（米，例如鞋柜约 0.35，长凳 0.4~1.2）。没有写 []
 - lens: 镜头类型 ultrawide / main / tele 之一（明显桶形畸变、视野很广 = ultrawide）
 - wall: 鞋架背靠哪面墙：left（左侧墙）/ back（正对相机的墙）/ right（右侧墙）。只能选照片里墙脚线清楚可见、旁边地面空地也在画面内（能完整看到鞋架）的墙。鞋架要考虑人的活动：不能放在门扇开关时扫过的扇形地面上（门铰链一侧为圆心、门宽约 0.8~0.9m 为半径），不能挡门洞正前方，要给进门、换鞋留出至少约 0.8m 的过道
@@ -99,10 +100,12 @@ export async function chat(env, messages, temperature, extra = {}) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Semantix ${res.status}: ${text.slice(0, 200)}`);
-  const content = JSON.parse(text).choices?.[0]?.message?.content || '';
+  const data = JSON.parse(text), content = data.choices?.[0]?.message?.content || '';
   const i = content.indexOf('{'), j = content.lastIndexOf('}');
   if (i < 0 || j < i) throw new Error('模型没有返回 JSON：' + content.slice(0, 100));
-  return JSON.parse(content.slice(i, j + 1));
+  const out = JSON.parse(content.slice(i, j + 1));
+  Object.defineProperty(out, 'usage', { value: data.usage }); // 不可枚举：不进合并结果和缓存
+  return out;
 }
 
 
@@ -120,6 +123,12 @@ export function mergeScenes(runs) {
   const doors = S.map(r => r.door).filter(d => d && ok(d.hinge) && ok(d.latch));
   const doorsA = doors.map(d => doors[0] && dd(d.hinge, doors[0].hinge) > dd(d.latch, doors[0].hinge) ? { ...d, hinge: d.latch, latch: d.hinge } : d);
   const door = doorsA.length >= need ? { hinge: medPt(doorsA.map(d => d.hinge)), latch: medPt(doorsA.map(d => d.latch)), swing: mode(doorsA.map(d => d.swing)) || 'in' } : null;
+  // 墙脚线两点：各次的两点先按远近排好（侧墙按 y、后墙按 x），再分别取中位数
+  const walls = {};
+  for (const k of ['left', 'back', 'right']) {
+    const ls = S.map(r => r.walls?.[k]).filter(l => Array.isArray(l) && l.length >= 2 && ok(l[0]) && ok(l[1])).map(l => [l[0], l[1]].sort((p, q) => k === 'back' ? p[0] - q[0] : p[1] - q[1]));
+    walls[k] = ls.length >= need ? [medPt(ls.map(l => l[0])), medPt(ls.map(l => l[1]))] : null;
+  }
   const corner = {};
   for (const k of ['left', 'right']) corner[k] = medPt(S.map(r => r.corner?.[k]).filter(p => ok(p) && p[0] > 0.02 && p[0] < 0.98));
   // 家具：按落地点重心在 0.12 以内归成一组，一半以上的结果里都有才要，取最接近组平均的那一个
@@ -138,8 +147,9 @@ export function mergeScenes(runs) {
   const top = medPt(S.map(r => ok(r.doorTop) && ok(r.doorBottom) ? r.doorTop : null)), bottom = medPt(S.map(r => ok(r.doorTop) && ok(r.doorBottom) ? r.doorBottom : null));
   return {
     ...S[0], best, wall, wallBase: medPt(W.map(r => r.wallBase)), cameraHeight: med(S.map(r => r.cameraHeight)),
-    doorTop: top && bottom ? top : null, doorBottom: top && bottom ? bottom : null, door, corner, obstacles,
+    doorTop: top && bottom ? top : null, doorBottom: top && bottom ? bottom : null, door, corner, walls, obstacles,
     lens: mode(S.map(r => r.lens)),
+    issueBest: S.every(r => typeof r.issues?.[best] === 'string' && r.issues[best].trim()) ? S[0].issues[best].trim() : '', // 每次都提了重拍建议才算（单次常误报）
     rec: S[0].rec && { style: S[0].rec.style, shelfMaterial: mode(S.map(r => r.rec?.shelfMaterial)), rodFinish: mode(S.map(r => r.rec?.rodFinish)) }, note: (W[0] || S[0]).note, votes: `${W.length}/${runs.length}`,
   };
 }
