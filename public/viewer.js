@@ -269,7 +269,16 @@ export class RackViewer {
     // 先按规则贴墙避让，再出 3 个候选：放到第一个，另外两个在地上画成脚印给用户点
     if (this.anchor) {
       this.fitAnchor(); this.spots3 = this.topSpots(3);
+      // 分割图说 3 个候选都压家具/挡门：按窄一点的鞋架重找，找到就放那里并建议改宽（app 显示「改成 N cm 宽」按钮）
+      let narrow = null;
+      if (this.segMap && this.spots3.every(s => s.seg)) {
+        const W0 = this.widthM;
+        for (const W of [0.7, 0.6, 0.5].filter(w => w < W0 - 0.01)) { this.widthM = W; const S = this.topSpots(3); if (S[0] && !S[0].seg) { narrow = { S, W }; break; } }
+        this.widthM = W0;
+        if (narrow) this.spots3 = narrow.S;
+      }
       const S0 = this.spots3[0], note = [this.fitNote, this.suggestW];
+      if (narrow) { this.placeAt(S0); this.suggestW = Math.round(narrow.W * 100); this.fitNote = `门边放不下 ${Math.round(this.widthM * 100)}cm 宽，建议宽度 ≤ ${this.suggestW}cm`; return; }
       if (S0) { this.placeAt(S0); if (S0.bad) [this.fitNote, this.suggestW] = note; } // 都压门或家具：保留「放不下 / 建议宽度」的提示
       return;
     }
@@ -418,7 +427,7 @@ export class RackViewer {
       const near = this.walls.map(w => [w, Math.min(...P.map(q => q.clone().sub(w.p).dot(w.n)))]).filter(x => x[1] < 0.5).sort((x, y) => x[1] - y[1])[0]?.[0];
       if (near) pts = pts.concat(pts.map(q => q.clone().addScaledVector(near.n, -q.clone().sub(near.p).dot(near.n))));
       if (P.length === 1) pts.push(...[[1, 0], [0, 1], [1, 1]].map(([i, j]) => P[0].clone().addScaledVector(T, (i - 0.5) * 0.4).addScaledVector(d, j)));
-      this.obstacles.push({ name: o.name, poly: hull(pts) });
+      this.obstacles.push({ name: o.name, shoe: o.shoe, poly: hull(pts) });
     });
     return side;
   }
@@ -522,19 +531,54 @@ export class RackViewer {
     }
     return out;
   }
+  // 地面点 → 照片坐标 [u, v]（0~1，和舞台裁切无关，floorAt 的反算）
+  photoUV(p) {
+    const R = THREE.MathUtils.degToRad, th = Math.tan(R(this.t.hfov) / 2), tv = th / (this.photoAspect || 0.75);
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-R(this.t.pitch), 0, R(this.t.roll), 'YXZ')).invert();
+    const d = p.clone().sub(new THREE.Vector3(0, this.t.camH, 0)).applyQuaternion(q);
+    return d.z < -0.01 ? [(d.x / -d.z / th + 1) / 2, (1 - d.y / -d.z / tv) / 2] : null;
+  }
+  // 照片分割图（seg.py：0 其他 1 地面 2 墙 3 门 4 固定家具/楼梯 5 小东西）在地面点处的组号，出画面 -1
+  segAt(p) {
+    const M = this.segMap, uv = M && this.photoUV(p); if (!uv || uv[0] < 0 || uv[0] >= 1 || uv[1] < 0 || uv[1] >= 1) return -1;
+    return M.data[Math.floor(uv[1] * M.h) * M.w + Math.floor(uv[0] * M.w)];
+  }
+  // 按分割图判断候选：脚印（内缩 5cm）下面要是地面，压到家具/门不行；背面往后 10cm 要是墙/门/家具（还是地面说明墙线推错、鞋架悬在屋中间）
+  segBad(s) {
+    if (!this.segMap) return false;
+    const W = this.widthM, off = (this.depthM || 0.3) / 2, tan = new THREE.Vector3(s.front.z, 0, -s.front.x), cnt = [0, 0, 0, 0, 0, 0];
+    let back = 0, backFloor = 0;
+    for (let i = 0; i <= 6; i++) {
+      const x = (i / 6 - 0.5) * (W - 0.1);
+      for (let j = 0; j <= 2; j++) { const g = this.segAt(s.q.clone().addScaledVector(tan, x).addScaledVector(s.front, (j - 1) * (off - 0.05))); if (g >= 0) cnt[g]++; }
+      const g = this.segAt(s.q.clone().addScaledVector(tan, x).addScaledVector(s.front, -off - 0.1)); if (g >= 0) { back++; if (g === 1) backFloor++; }
+    }
+    // 鞋架立体范围（正面、背面，离地 0.2/0.45/0.7m）：桌子、长凳底下能看到地面，只查脚印拦不住；这些点落在家具或门上就是压到家具、挡门。
+    // 没有深度，视线穿过鞋架落到更远处的门上也会算进来（g10 贴侧墙被误判、建议改窄）；只查背面或再要求 AI 禁区同意都试过，更差
+    let vol = 0, hit = 0;
+    for (let i = 0; i <= 6; i++) for (const y of [0.2, 0.45, 0.7]) for (const j of [-1, 1]) {
+      const g = this.segAt(s.q.clone().addScaledVector(tan, (i / 6 - 0.5) * (W - 0.1)).addScaledVector(s.front, j * (off - 0.03)).setY(y)); if (g >= 0) { vol++; if (g === 3 || g === 4) hit++; }
+    }
+    if (vol >= 10 && hit / vol > 0.2) return true;
+    const n = cnt.reduce((a, b) => a + b, 0);
+    return n < 6 || (cnt[3] + cnt[4]) / n > 0.15 || (cnt[1] + cnt[5]) / n < 0.6 || back >= 3 && backFloor / back > 0.5;
+  }
   // 给用户点的 k 个候选：不压门和家具的排前面（AI 给的门、家具点常偏，压到的也留着补位），再按离门近（没门按离 AI 墙脚点近）排，互不重叠
   topSpots(k = 3) {
     const A = this.anchor; if (!A) return [];
     const D = this.door, rot0 = this.t.rot, W = this.widthM;
     const toDoor = q => { const r = q.clone().sub(D.H), a = Math.max(0, Math.min(D.w, r.dot(D.u))); return q.distanceTo(D.H.clone().addScaledVector(D.u, a)); };
-    // 挡在门洞正前方的不给（和门洞重叠超过 10cm；门点 AI 给得准，那是最不该放的地方）；只压到门扇扫过的范围或家具的排后面补位（这两样 AI 常给偏）
-    const front = q => { const r = q.clone().sub(D.H), al = r.dot(D.u), into = r.dot(D.n); return into > -0.05 && into < 0.9 && al > 0.1 - W / 2 && al < D.w + W / 2 - 0.1; };
-    const S = this.spots(0.1, 0.1).filter(s => !D || !front(s.q)).map(s => { this.t.rot = s.rot; return { ...s, bad: this.footprintBlocked(s.q.x, s.q.z), cost: D ? toDoor(s.q) : s.p0.distanceTo(A.p0) }; });
+    // 挡在门洞正前方的不给（脚印 15% 以上落在门洞前 0.9m 内；门点 AI 给得准，那是最不该放的地方）；只压到门扇扫过的范围或家具的排后面补位（这两样 AI 常给偏）
+    const off0 = (this.depthM || 0.3) / 2;
+    const front = s => { const tan = new THREE.Vector3(s.front.z, 0, -s.front.x); let k = 0;
+      for (let i = 0; i <= 6; i++) for (let j = 0; j <= 2; j++) { const r = s.q.clone().addScaledVector(tan, (i / 6 - 0.5) * W).addScaledVector(s.front, (j - 1) * off0).sub(D.H), al = r.dot(D.u), into = r.dot(D.n); if (into > -0.05 && into < 0.9 && al > 0 && al < D.w) k++; }
+      return k / 21 > 0.15; };
+    const S = this.spots(0.1, 0.1).filter(s => !D || !front(s)).map(s => { this.t.rot = s.rot; return { ...s, seg: this.segBad(s), bad: this.footprintBlocked(s.q.x, s.q.z), cost: D ? toDoor(s.q) : s.p0.distanceTo(A.p0) }; });
     this.t.rot = rot0;
-    S.sort((a, b) => a.bad - b.bad || a.cost - b.cost);
+    S.sort((a, b) => a.seg - b.seg || a.bad - b.bad || a.cost - b.cost);
     // 照片里已有鞋架/鞋柜（AI 起的名字里带）：旧鞋架的位置排第一（换掉它）；鞋柜常是固定的，排第二让用户点。投到离它最近的墙上，没认出墙就沿 AI 墙脚线的方向
     const off = (this.depthM || 0.3) / 2 + 0.01;
-    for (const o of this.obstacles || []) if (/鞋[架柜]/.test(o.name)) {
+    for (const o of this.obstacles || []) if (o.shoe || /鞋[架柜]/.test(o.name)) {
       const c = o.poly.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(o.poly.length);
       // 贴哪面墙：旧鞋架最长那条边和墙平行（只按远近会投到旁边的侧墙上）
       const P = o.poly, e = P.map((p, i) => P[(i + 1) % P.length].clone().sub(p)).reduce((a, b) => b.length() > a.length() ? b : a).normalize();
@@ -543,7 +587,7 @@ export class RackViewer {
       const front = w ? w.n.clone() : new THREE.Vector3(-e.z, 0, e.x), q = w ? c.clone().addScaledVector(front, off - c.clone().sub(w.p).dot(front)) : c.clone();
       if (!w && front.dot(c) > 0) front.negate();
       const p0 = q.clone().addScaledVector(front, -off);
-      S.splice(/鞋架/.test(o.name) ? 0 : Math.min(1, S.length), 0, { q, p0, front, rot: THREE.MathUtils.radToDeg(Math.atan2(front.x, front.z)), bad: false, cost: -1, replace: o.name });
+      S.splice(/[架凳]/.test(o.name) ? 0 : Math.min(1, S.length), 0, { q, p0, front, rot: THREE.MathUtils.radToDeg(Math.atan2(front.x, front.z)), bad: false, cost: -1, replace: o.name });
     }
     const out = [];
     for (const s of S) if (out.length < k && out.every(o => o.q.distanceTo(s.q) > W * 0.9)) out.push(s);
@@ -602,7 +646,9 @@ export class RackViewer {
 
   updateDoorMark() {
     const m = this.doorMark; m.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); }); m.clear();
-    this.conflict = this.footprintBlocked(this.t.x, this.t.z);
+    // 有分割图时以它为准：AI 给的门、家具点常偏，分割说没压到就不报
+    const R = THREE.MathUtils.degToRad(this.t.rot);
+    this.conflict = this.footprintBlocked(this.t.x, this.t.z) && (!this.segMap || this.segBad({ q: new THREE.Vector3(this.t.x, 0, this.t.z), front: new THREE.Vector3(Math.sin(R), 0, Math.cos(R)) }));
     // 平时淡虚线（不抢眼），按住正在拖的那个框加深
     const col = this.conflict ? 0xff3b30 : 0xffffff, E = this.editing;
     const dashed = (P, on) => { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(P.map(q => q.clone().setY(0.003))), new THREE.LineDashedMaterial({ color: col, dashSize: 0.06, gapSize: 0.04, transparent: true, opacity: on ? 1 : 0.5 })); l.computeLineDistances(); m.add(l); };

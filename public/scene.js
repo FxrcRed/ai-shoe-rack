@@ -162,7 +162,7 @@ export function toScene(ai, { f35, aspect, geo, hfov, light }) {
   }
   // 家具/障碍物的落地点（AI 偶尔仍会把地上的鞋/包列进来：按名字再过滤一次，太小的在 viewer 里按面积过滤）
   const obstacles = (Array.isArray(a.obstacles) ? a.obstacles : []).slice(0, 8).map(o => ({
-    name: String(o?.name || '').slice(0, 12), depth: num(o?.depth, 0.05, 1.5, 0.4),
+    name: String(o?.name || '').slice(0, 12), depth: num(o?.depth, 0.05, 1.5, 0.4), shoe: o?.shoe === true,
     pts: (Array.isArray(o?.pts) ? o.pts : []).map(pt).filter(q => q && q[1] > horizonY + 0.01).slice(0, 6),
   })).filter(o => o.pts.length && !MOVABLE.test(o.name));
   const spot = [];

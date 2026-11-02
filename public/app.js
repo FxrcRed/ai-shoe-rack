@@ -204,8 +204,20 @@ function photosChanged() {
   S.scene = new Promise(done => { S.analyzeTimer = setTimeout(() => analyze(seq).then(done), 600); }); // 连拍时等一下再一起分析
 }
 
+// 本地语义分割（server 转发到 seg/seg.py）：原图缩到 640 宽发过去，回来每像素一字节的分组图 { w, h, data }；没有服务或出错就是 null
+async function segOf(img) {
+  if (S.offline) return null;
+  try {
+    const k = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const j = await post('api/seg', { image: c.toDataURL('image/jpeg', 0.85) }); if (!j.data) { if (j.warning) console.warn(j.warning); return null; }
+    return { w: j.w, h: j.h, data: Uint8Array.from(atob(j.data), ch => ch.charCodeAt(0)) };
+  } catch (e) { console.warn('分割失败', e); return null; }
+}
+
 async function analyze(seq) {
   const ph = S.photos;
+  const segs = ph.map(p => segOf(p.img)); // 和识图并行
   let ai = null;
   try {
     const j = await post('api/scene', { photos: ph.map(p => ({ image: shrink(p.img), aspect: p.aspect, horizonY: p.geo?.horizonY })), need: $('desc').value });
@@ -232,6 +244,7 @@ async function analyze(seq) {
   const scene = toScene(ai, opts);
   scene.weak = !p.q.ok || !!scene.issue; // 本地检查不过，或 AI 三次识图都建议重拍
   p.noDoor = !!ai && !/door/.test(scene.camHSrc); if (p.noDoor) renderPhotos(); // 没有完整的门：尺度只能靠 AI 估
+  scene.seg = await Promise.race([segs[best], new Promise(r => setTimeout(r, 6000, null))]); // 分割服务刚启动在加载模型时不等它
   return scene;
 }
 
@@ -249,7 +262,7 @@ async function enterDesign() {
 }
 function placeScene(scene) {
   if (!scene) return;
-  viewer.placeScene(scene); S.placed = true;
+  viewer.segMap = scene.seg || null; viewer.placeScene(scene); S.placed = true; showFit(); // 放好后才定下提示和建议宽度，再刷新一次
   if (scene.weak) toast(`${scene.issue || '照片里地面/墙脚线条不清楚'}，摆放可能不准：可以手动拖动，或点顶部第 2 格回去重拍`, 6000);
   else if (scene.note) toast('AI：' + scene.note);
 }
