@@ -7,6 +7,8 @@ permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: true }
 jobs:
   deploy:
+    # 私有备份仓库（ai-shoe-rack-archive）同步时会带上这个文件，但它没开 Pages：只在公开仓库发布
+    if: github.repository == 'FxrcRed/ai-shoe-rack'
     runs-on: ubuntu-latest
     environment: { name: github-pages, url: "${{ steps.d.outputs.page_url }}" }
     steps:
