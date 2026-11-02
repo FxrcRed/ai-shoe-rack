@@ -124,7 +124,6 @@ function chips(el, list, cur, onPick, dot) {
 // 没有后端时（Artifacts / GitHub Pages 等静态托管）直接在浏览器里跑模拟模式
 async function post(url, body) {
   if (S.offline && url.endsWith('scene')) return { scene: null, mock: true };
-  if (S.offline && url.endsWith('check')) return { check: null, mock: true };
   if (S.offline) return url.endsWith('generate') ? { schemes: mockGenerate(body), mock: true } : { scheme: mockRevise(body), mock: true };
   let r, j;
   try {
@@ -179,7 +178,7 @@ function renderPhotos() {
   S.photos.forEach((p, i) => {
     const d = document.createElement('div'); d.className = 'ph' + (S.best === i && S.photos.length > 1 ? ' best' : '');
     const ok = p.q.level === 'ok', open = !usable(p), best = S.best === i && S.photos.length > 1 ? '（用这张）' : '';
-    const msg = ok ? (S.analyzing ? '分析中…' : p.q.msg + best) : p.q.msg + (p.q.forced ? '，按默认角度继续，尺寸标「约」' : p.accepted ? '（仍然使用）' : '');
+    const msg = ok ? (S.analyzing ? '分析中…' : p.q.msg + (p.noDoor ? '，门没拍全，尺寸约估' : '') + best) : p.q.msg + (p.q.forced ? '，按默认角度继续，尺寸标「约」' : p.accepted ? '（仍然使用）' : '');
     const ai = p.ai && !S.analyzing ? `<span class="q wait">AI 建议：${p.ai.replace(/[<>&]/g, c => `&#${c.charCodeAt(0)};`)}</span>` : '';
     d.innerHTML = `<img src="${p.url}" alt=""><button class="x" aria-label="删除">✕</button>
       <div class="tags"><span class="q ${open ? 'bad' : ok && !S.analyzing ? 'ok' : 'wait'}">${msg}</span>${ai}</div>`;
@@ -197,7 +196,7 @@ function renderPhotos() {
 
 function photosChanged() {
   S.placed = false; S.best = undefined; S.rec = null;
-  clearTimeout(S.analyzeTimer);
+  clearTimeout(S.analyzeTimer); viewer?.clearEdits(); // 换照片：用户拖过的门框、家具框作废
   const seq = S.seq = (S.seq || 0) + 1;
   S.analyzing = !!S.photos.length;
   renderPhotos();
@@ -232,7 +231,7 @@ async function analyze(seq) {
   const opts = { f35: p.f35, aspect: p.aspect, geo, hfov, light };
   const scene = toScene(ai, opts);
   scene.weak = !p.q.ok || !!scene.issue; // 本地检查不过，或 AI 三次识图都建议重拍
-  S.sceneCtx = ai ? { ai, opts, img: p.img, weak: scene.weak, seq } : null; // 给 AI 复查用
+  p.noDoor = !!ai && !/door/.test(scene.camHSrc); if (p.noDoor) renderPhotos(); // 没有完整的门：尺度只能靠 AI 估
   return scene;
 }
 
@@ -253,48 +252,6 @@ function placeScene(scene) {
   viewer.placeScene(scene); S.placed = true;
   if (scene.weak) toast(`${scene.issue || '照片里地面/墙脚线条不清楚'}，摆放可能不准：可以手动拖动，或点顶部第 2 格回去重拍`, 6000);
   else if (scene.note) toast('AI：' + scene.note);
-  checkPlacement();
-}
-
-// AI 复查：把鞋架合成到照片上给识图模型看——是否落在地面、挡不挡门的开启范围和过道；不行就按它给的新墙脚点重摆，最多挪 2 次
-async function checkPlacement() {
-  const ctx = S.sceneCtx, msg = $('check-msg');
-  if (!ctx || S.checking) return;
-  S.checking = true; msg.hidden = false;
-  const photo = shrink(ctx.img), why = [];
-  let text = '';
-  try {
-    for (let round = 0; round < 3; round++) {
-      msg.textContent = round ? `AI 已把鞋架挪开（${why[why.length - 1]}），正在再检查一次…` : 'AI 正在检查摆放：是否落地、碰不碰家具、挡不挡门和过道…';
-      const j = await post('api/check', { photo, image: shrink(viewer.composite(ctx.img)), wall: viewer.scene0?.wall, need: $('desc').value });
-      const c = j.check;
-      if (ctx.seq !== S.seq || viewer.dragged || S.sceneCtx !== ctx) { text = ''; break; } // 照片换了或用户自己拖过：以用户为准
-      if (!c) { text = ''; break; }
-      if (c.ok === true || c.onFloor !== false && c.clearOfDoor !== false && c.clearOfPath !== false && c.clearOfFurniture !== false) {
-        text = why.length ? `✓ 已按 AI 检查调整位置（${why.join('；')}）` : '✓ AI 检查通过：落在地面上，不碰家具、不挡门和过道'; break;
-      }
-      const problem = String(c.problem || '摆放不合理').slice(0, 40);
-      // 碰家具/挡门但落了地：家具和门的位置程序已经知道，只是 AI 估的大小偏小 → 禁区外扩 8cm 重新避让，比换墙脚点稳
-      // 只外扩一次；外扩后放不下就退回原位只提醒（实测 AI 复查对「碰到家具」误报多：离长凳 8cm 也说穿插）
-      const geoOk = c.onFloor !== false && viewer.hasZones() && viewer.anchor;
-      if (geoOk && viewer.pad) { text = `⚠ AI 仍提醒：${problem}（AI 检查偶尔误报，可对照地上的虚线框自己拖动）`; break; }
-      if (geoOk && (c.clearOfFurniture === false || c.clearOfDoor === false)) {
-        viewer.pad = 0.08; viewer.fitAnchor();
-        if (viewer.suggestW || /放哪都会/.test(viewer.fitNote)) { viewer.pad = 0; viewer.fitAnchor(); text = `⚠ AI 提醒：${problem}（AI 检查偶尔误报，可对照地上的虚线框自己拖动）`; break; }
-        why.push(problem); continue;
-      }
-      if (!Array.isArray(c.wallBase) || round === 2) { text = `⚠ AI 提醒：${problem}。可以拖动鞋架或旋转调整`; break; }
-      why.push(problem);
-      let wb = c.wallBase.map(Number); const cur = viewer.scene0?.base;
-      // 说没落地却给了差不多的点：程序往地面方向（下）挪 4% 画面高度
-      if (c.onFloor === false && cur && Math.hypot(wb[0] - cur[0], wb[1] - cur[1]) < 0.04) wb = [cur[0], Math.max(wb[1], cur[1]) + 0.04];
-      ctx.ai = { ...ctx.ai, wall: ['left', 'back', 'right'].includes(c.wall) ? c.wall : ctx.ai.wall, wallBase: wb };
-      const sc = toScene(ctx.ai, ctx.opts); sc.weak = ctx.weak;
-      viewer.placeScene(sc);
-    }
-  } catch (e) { text = ''; console.warn('摆放检查失败', e); }
-  msg.textContent = text; msg.hidden = !text;
-  S.checking = false;
 }
 
 // 材质 / 风格 / 色卡推荐：只认能生产的 4 种隔板、2 种杆色；没有 AI 结果时给常见搭配

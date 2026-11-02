@@ -92,6 +92,6 @@ export function result() {
     camH: [+s.camH.toFixed(2), r.truth.camH, s.camHSrc], wall: s.wall, corner: s.corner, obs: v.obstacles.map(o => o.name), door: !!v.door,
     aiPts: { wallBase: ai.wallBase, corner: ai.corner, obstacles: ai.obstacles, door: ai.door, doorTop: ai.doorTop, doorBottom: ai.doorBottom },
     obsLocal: v.obstacles.map(o => [o.name, o.poly.map(q => r.toLocal(q.x, q.z).map(n => +n.toFixed(2)))]),
-    fit: v.fitNote, check: document.getElementById('check-msg').textContent, res: r.check(v), W: v.widthM, geoSrc: p?.geo?.src,
+    fit: v.fitNote, res: r.check(v), W: v.widthM, geoSrc: p?.geo?.src,
   };
 }

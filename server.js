@@ -6,7 +6,7 @@ import os from 'node:os';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { normalizeScheme } from './public/rack.js';
-import { buildGenerateMessages, buildReviseMessages, buildSceneMessages, buildCheckMessages, chat, mergeScenes, mockGenerate, mockRevise } from './ai.js';
+import { buildGenerateMessages, buildReviseMessages, buildSceneMessages, chat, mergeScenes, mockGenerate, mockRevise } from './ai.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(ROOT, 'public');
@@ -66,12 +66,6 @@ async function api(req, res, url) {
     }
     throw err;
   };
-  if (url.pathname === '/api/check') {
-    if (!body.image || !body.photo) return send(res, 400, { error: '缺少图片' });
-    if (!env.key || !env.visionModel) return send(res, 200, { check: null, mock: true });
-    try { return send(res, 200, { check: await vision(buildCheckMessages(body), 2, 45000) }); }
-    catch (e) { return send(res, 200, { check: null, warning: 'AI 摆放检查失败：' + e.message }); }
-  }
   if (url.pathname === '/api/scene') {
     if (!body.image && !body.photos?.length) return send(res, 400, { error: '缺少照片' });
     const cf = isLocal(req) && cacheFile(body.cacheKey), cached = cf && fs.existsSync(cf) && JSON.parse(fs.readFileSync(cf, 'utf8'));

@@ -120,8 +120,8 @@ export function detectHorizon(img, hfov) {
   est.sort((p, q) => p.h - q.h);
   let hfovEst = null, acc = 0, tot = est.reduce((t, e) => t + e.w, 0);
   for (const e of est) if ((acc += e.w) >= tot / 2) { hfovEst = +e.h.toFixed(1); break; } // 加权中位数
-  // 竖直消失点：内点大多接近竖直，且在画面中心下方（俯拍）或无穷远
-  const vert = vps.filter(p => p.steep > 0.9 && p.below && p.dir[1] > 0.6).sort((a, b) => b.score - a.score)[0];
+  // 竖直消失点：内点大多接近竖直。在画面中心上方（微微仰拍，房产照常见）也算：只收俯拍时 g05/g09/r01 的竖线被当成水平线，地平线算到 -30 屏外
+  const vert = vps.filter(p => p.steep > 0.9 && p.dir[1] > 0.6).sort((a, b) => b.score - a.score)[0];
   const hor = vps.filter(p => p !== vert);
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];

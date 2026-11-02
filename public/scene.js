@@ -83,8 +83,10 @@ function floorGap(p, q, cam) {
 // 每个来源的误差 = 点偏 1% 画面时结果变多少：门顶贴近地平线（站着俯拍）时门高法很敏感，门宽法就占主导
 const DOOR_H = 2.05, DOOR_W = 0.88, PT = 0.01;
 export function camHeight(a, cam) {
-  // 贴画面边缘（3% 内）的点多半是物体被裁掉、AI 把点钳在了边上（实测门顶在画面外时它给 y=0 而不是 null）
-  const ok = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite) && p[0] > 0.03 && p[0] < 0.97 && p[1] > 0.03 && p[1] < 0.97;
+  // 贴画面边缘（3% 内）的点多半是物体被裁掉、AI 把点钳在了边上（实测门顶在画面外时它给 y=0 而不是 null）。
+  // 但门顶真在边上时也是这样（合成图 y=0.022），位置分不出来：贴边的门顶只在门宽法也算出、两者差 <20% 时才用
+  const pt = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+  const ok = p => pt(p) && p[0] > 0.03 && p[0] < 0.97 && p[1] > 0.03 && p[1] < 0.97;
   const est = [{ src: 'ai', h: Math.min(2.2, Math.max(0.3, Number.isFinite(+a.cameraHeight) ? +a.cameraHeight : 1.35)), s: 0.3 }];
   const jitter = (f, pts) => { // f(pts) 对每个点上下左右偏 PT 的变化，平方和开根
     const h0 = f(pts); if (!h0) return null; let v = 0;
@@ -94,18 +96,21 @@ export function camHeight(a, cam) {
     }));
     return { h: h0, s: Math.sqrt(v) };
   };
-  if (ok(a.doorTop) && ok(a.doorBottom)) {
+  if (pt(a.doorTop) && pt(a.doorTop.map(Number)) && ok(a.doorBottom)) {
     const r = jitter(([t, b]) => camHFromRef(t, b, cam, DOOR_H), [a.doorTop.map(Number), a.doorBottom.map(Number)]);
-    if (r && r.h > 0.3 && r.h < 2.2) est.push({ src: 'door', h: r.h, s: Math.max(0.03, r.s) });
+    if (r && r.h > 0.3 && r.h < 2.2) est.push({ src: 'door', h: r.h, s: Math.max(0.03, r.s), edge: !ok(a.doorTop) });
   }
   const d = a.door;
   if (d && ok(d.hinge) && ok(d.latch)) {
     const r = jitter(([p, q]) => { const g = floorGap(p, q, cam); return g ? DOOR_W / g : null; }, [d.hinge.map(Number), d.latch.map(Number)]);
     if (r && r.h > 0.3 && r.h < 2.2) est.push({ src: 'doorW', h: r.h, s: Math.hypot(r.s, r.h * 0.09) }); // 门宽本身 ±9%（0.8~0.95m）
   }
-  // 门高、门宽差太多（>35%）多半是 AI 点错了一个：只信误差小的那个
+  // 门高、门宽差太多（>35%）多半是 AI 点错了一个：留离 AI 估值近的那个（误差估计只管点抖动，管不了点错位置：实测锁侧点被点到门半腰，门宽法算出 0.31m 还自称 ±0.04）
+  // 和 AI 估值差 2 倍以上的几何估值不用：AI 直接估常差 15%，但不会错一倍；几何法点错一个就能错几倍
+  for (let i = est.length - 1; i > 0; i--) if (Math.abs(Math.log(est[i].h / est[0].h)) > 0.7) est.splice(i, 1);
   const dh = est.find(e => e.src === 'door'), dw = est.find(e => e.src === 'doorW');
-  if (dh && dw && Math.abs(Math.log(dh.h / dw.h)) > 0.3) est.splice(est.indexOf(dh.s > dw.s ? dh : dw), 1);
+  if (dh?.edge && !(dw && Math.abs(Math.log(dh.h / dw.h)) < 0.2)) est.splice(est.indexOf(dh), 1);
+  else if (dh && dw && Math.abs(Math.log(dh.h / dw.h)) > 0.3) { const h0 = est[0].h, far = e => Math.abs(Math.log(e.h / h0)); est.splice(est.indexOf(far(dh) > far(dw) ? dh : dw), 1); }
   let W = 0, H = 0;
   for (const e of est) { W += 1 / e.s ** 2; H += e.h / e.s ** 2; }
   const best = est.reduce((b, e) => e.s < b.s ? e : b);

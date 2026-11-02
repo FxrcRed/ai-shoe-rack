@@ -59,27 +59,6 @@ const SCENE = `你是室内摆放助手。看用户拍的同一个角落（玄�
 - note: 一句话说明放在哪、为什么，≤25 字
 - rec: 看照片里地面、墙面、家具的颜色和风格，推荐一套能生产的搭配，{"style": 房间风格≤8字（如「浅色木地板」「白墙现代」）, "shelfMaterial": 只能是 实木/玻璃/金属板/亚克力 之一, "rodFinish": 只能是 银色铝/黑色 之一}`;
 
-// 摆放复查：把虚拟鞋架合成到照片上，让 AI 看效果判断是否落地、挡门、挡过道，不行就给新的墙脚点
-const CHECK = `你是室内摆放审核员。图 A 是用户拍的玄关/门口原照片，图 B 是程序把一个虚拟光轴鞋架（金属杆 + 隔板，地上带阴影）按计算的位置合成上去的效果。两张图坐标一致，都叠了洋红色 0.1 坐标网格（左上角 0,0）。
-判断这个摆放是否合理，只输出一个 JSON 对象，不要解释，不要 markdown：
-- onFloor: 布尔。逐个看鞋架的 4 个底座（杆子最下端的小圆柱）：是否都落在地面区域内，背面底部是否在墙脚线前方。只要有底座落在墙脚线以上的墙面区域、门上、柜子上，或者鞋架看起来比周围同距离的物体小很多（说明被放到了墙后面），就是 false
-- clearOfDoor: 布尔。是否避开了门扇开关时扫过的扇形地面（铰链一侧为圆心、门宽约 0.8~0.9m 为半径）和门洞正前方
-- clearOfPath: 布尔。是否给进门、换鞋留出了至少约 0.8m 宽的过道，没堵住走动路线
-- clearOfFurniture: 布尔。鞋架是否和柜子、桌子、凳子、墙等不能移动的物体重叠或穿插（鞋架任何部分插进家具里、穿进墙里都是 false）
-- ok: 以上四项都为 true 时为 true
-- problem: ok 为 false 时用一句话说明问题（≤25 字），否则 ""
-- wall: ok 为 false 时新的靠墙面 left / back / right（相对拍照的人），否则 null
-- wallBase: ok 为 false 时新的鞋架背面中点位置 [x, y]：图 A 里该墙墙脚线（墙面与地面交界、踢脚线最底边）前方紧贴的地面上一点（离墙脚约 5cm），必须在地面区域内，宁可偏地面也不要偏到墙上；两侧各 0.5m 墙脚是空地、不碰家具、远离门的开启范围和过道；x 在 0.15~0.85。照片里实在没有合适位置就写 null`;
-
-export function buildCheckMessages(req) {
-  return [{ role: 'system', content: CHECK }, { role: 'user', content: [
-    { type: 'text', text: `图 A（原照片）。现在鞋架靠 ${req.wall || '未知'} 墙。${req.need ? '用户需求：' + req.need : ''}` },
-    { type: 'image_url', image_url: { url: req.photo } },
-    { type: 'text', text: '图 B（合成效果）：' },
-    { type: 'image_url', image_url: { url: req.image } },
-  ] }];
-}
-
 // req.photos = [{ image, aspect, horizonY }]（旧格式 req.image 也认）
 export function buildSceneMessages(req) {
   const photos = (req.photos || [{ image: req.image, aspect: req.aspect, horizonY: req.horizonY }]).slice(0, 3);
