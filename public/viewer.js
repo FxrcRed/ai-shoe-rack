@@ -263,6 +263,10 @@ export class RackViewer {
         this.widthM = W0;
         if (narrow) this.spots3 = narrow.S;
       }
+      // 第一个候选在墙角（另一面墙离它不到 0.8m）：紧跟一个同位置贴另一面墙的候选。墙角处贴哪面墙判不准（q005/d005 位置对、贴错墙），
+      // 点空地时已有 cornerAlt，这里给默认的第一个也配上；旧鞋架的候选自己带了转向的那个，不重复
+      const s0 = this.spots3[0], a0 = s0 && !s0.replace && !this.noCornerAlt && this.cornerAlt(s0.q);
+      if (a0 && Math.abs(((a0.rot - s0.rot) % 360 + 540) % 360 - 180) > 30) this.spots3 = [s0, { ...a0, altOf: s0 }, ...this.spots3.slice(1)].slice(0, 3);
       const S0 = this.spots3[0], note = [this.fitNote, this.suggestW];
       if (narrow) { this.placeAt(S0); this.suggestW = Math.round(narrow.W * 100); this.fitNote = `门边放不下 ${Math.round(this.widthM * 100)}cm 宽，建议宽度 ≤ ${this.suggestW}cm`; return; }
       // 都压门或家具：保留「放不下 / 建议宽度」的提示。有分割图且它说这里没压到就不提示：AI 给的门、家具点常偏（g12 位置对却提示太宽）
