@@ -1,11 +1,12 @@
 // ai.js — 提示词、Semantix 调用、模拟模式（无密钥/调用失败时用）
 export { mockGenerate, mockRevise } from './public/mock.js';
+import { SNUG_DEPTH } from './public/shoes.js';
 
 const FIELDS = `每个方案的字段（单位：尺寸 cm，杆径 mm）：
 - name: 方案名，≤8 个字
 - intro: 一句话介绍，≤40 字，说明适合什么、为什么这样设计
 - width: 总宽 cm，不得超过可用宽度；umbrella 为 true 时还要再给侧面挂伞杆留 14cm
-- depth: 进深 cm，不超过可用深度（放鞋一般 28~35）
+- depth: 进深 cm，不超过可用深度；默认 ${SNUG_DEPTH}（刚好放下 42 码男鞋），只有用户说了空间宽敞、鞋多或要放靴子才加深，最多 35
 - height: 总高 cm，不超过可用高度
 - shelves: 每层隔板离地高度 cm 的数组，从低到高，如 [5, 22, 39]；相邻间距 ≥14（运动鞋约 16~18，高帮/靴子 25+）；最高一层可等于 height（顶面可放钥匙）
 - hooks: 顶部前横杆上的挂钩个数 0~10（挂钥匙、包）；用户没提到要挂钥匙/包/帽子/衣物就必须填 0（挂雨伞用 umbrella，不算挂钩）
@@ -13,7 +14,22 @@ const FIELDS = `每个方案的字段（单位：尺寸 cm，杆径 mm）：
 - shelfMaterial: 只能是 实木/玻璃/金属板/亚克力 之一
 - rodDiameter: 光轴杆径 mm，只能是 6/8/10/12/16/20 之一（常用 12~16，宽或放重物用 16~20）
 - rodFinish: 杆件颜色，只能是 银色铝/黑色 之一
-估算容量：每层每 25cm 宽放 1 双鞋。`;
+估算容量：每层每 25cm 宽放 1 双鞋。
+默认按普通家庭玄关做：宽 60~80、3~4 层、约 8~12 双。只有用户明确说了鞋多、全家用、要放几十双、要大一点/多层等，才做得更宽更高。`;
+
+// 用户没要大容量时的硬上限：宽 ≤80、≤4 层、进深 ≤ SNUG_DEPTH（AI 不说需求时常给 100cm × 5 层、28 双）
+export const WANTS_BIG = /(\d+|[一两二三四五六七八九十几]+)\s*双|鞋多|很多|全家|一家|家里人多|大容量|大号|大一点|大一些|多放|放得多|多层|高一点|高一些|宽一点|宽一些|加宽|加高|宽敞|空间大|地方大|靴/;
+export function tame(raw, description = '') {
+  if (!raw || WANTS_BIG.test(description)) return raw;
+  const s = { ...raw }, w = Number(s.width);
+  if (w > 80) s.width = 80;
+  if (Number(s.depth) > SNUG_DEPTH) s.depth = SNUG_DEPTH;
+  if (Array.isArray(s.shelves) && s.shelves.length > 4) {
+    s.shelves = [...s.shelves].map(Number).sort((a, b) => a - b).slice(0, 4);
+    s.height = Math.min(Number(s.height) || 0, s.shelves[3]) || s.shelves[3]; // 顶面就是第 4 层
+  }
+  return s;
+}
 
 const SYSTEM = `你是"光轴鞋架"参数设计助手。光轴鞋架由圆杆（光轴）+ 连接件 + 隔板组成，零件表由程序计算，你只负责把用户需求翻译成结构参数。
 只输出一个 JSON 对象，不要解释，不要 markdown 代码块。

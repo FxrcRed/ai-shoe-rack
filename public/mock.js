@@ -1,5 +1,6 @@
 // mock.js — 模拟模式（无密钥 / 无后端 / AI 失败时用）：关键词规则出方案和改方案。server 与纯前端共用
 import { normalizeScheme, evenShelves, ROD_DIAMETERS } from './rack.js';
+import { SNUG_DEPTH } from './shoes.js';
 
 const CN = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 function guessPairs(text = '') {
@@ -20,14 +21,14 @@ export function mockGenerate(req) {
   const st = STYLE[req.style] || STYLE['木地板暖色'];
   const text = req.description || '';
   const pairs = guessPairs(text), umb = /伞/.test(text), hooks = /钥匙|挂包|背包|包包|挂钩|钩子|帽子|挂衣|外套|围巾/.test(text) ? 3 : 0; // 只在用户提到要挂东西时加（"挂雨伞"不算）
-  const W = Math.min(+req.maxWidth || 100, 100), D = Math.min(+req.maxDepth || 32, 32);
+  const W = Math.min(+req.maxWidth || 80, 100), D = Math.min(+req.maxDepth || SNUG_DEPTH, SNUG_DEPTH);
   const per = w => Math.max(1, Math.floor(w / 25));
   const a = { w: Math.min(W, 80) }; a.n = Math.min(5, Math.max(3,Math.ceil(pairs / per(a.w))));
   const b = { w: Math.min(W, 60) }; b.n = Math.min(6, Math.max(3, Math.ceil(pairs / per(b.w)) + 1));
   const raw = [
     { name: '紧凑两用', intro: `宽 ${a.w}cm 放 ${a.n} 层，约 ${a.n * per(a.w)} 双鞋${umb ? '，侧挂雨伞' : ''}，顶面放钥匙`, width: a.w, depth: D,
       height: 5 + (a.n - 1) * 18, shelves: evenShelves(a.n, 5 + (a.n - 1) * 18), hooks, umbrella: umb, shelfMaterial: st.mat, rodDiameter: 12, rodFinish: st.fin },
-    { name: '高窄多层', intro: `占地窄，${b.n} 层竖向收纳，适合门后窄墙`, width: b.w, depth: Math.min(D, 30),
+    { name: '高窄多层', intro: `占地窄，${b.n} 层竖向收纳，适合门后窄墙`, width: b.w, depth: D,
       height: 5 + (b.n - 1) * 17, shelves: evenShelves(b.n, 5 + (b.n - 1) * 17), hooks, umbrella: umb, shelfMaterial: st.mat, rodDiameter: 12, rodFinish: st.fin },
     { name: '换鞋凳款', intro: '两层鞋 + 实木顶面，顶上能放包和钥匙，杆径加粗更稳', width: W, depth: D,
       height: 45, shelves: [5, 25, 45], hooks, umbrella: umb, shelfMaterial: '实木', rodDiameter: 16, rodFinish: st.fin },

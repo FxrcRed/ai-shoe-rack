@@ -22,6 +22,23 @@ const ADMIN = new URLSearchParams(location.search).has('admin');
 const MARKUP = 1.25, LABOR = 50;
 // 在 Artifacts 等别的网站的 iframe 里（读不到 top 的地址就是跨域）；自己的 phone.html 预览框同源，不算
 const IN_FRAME = (() => { try { return window.self !== window.top && window.top.location.origin !== location.origin; } catch { return true; } })();
+// ---------- 使用记录（朋友试用）：有后端时把操作攒一下发到 /api/log，首页写明了；Pages / Artifacts 没后端不记，预览页里的 iframe 也不记 ----------
+const NO_LOG = window.self !== window.top;
+const SID = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+let logQ = [], logT = 0;
+function track(type, data) {
+  logQ.push({ t: Date.now(), page: S.page, type, ...data });
+  clearTimeout(logT); logT = setTimeout(flushLog, 2000);
+}
+function flushLog() {
+  if (!logQ.length || S.offline || NO_LOG) return;
+  const body = JSON.stringify({ sid: SID, events: logQ }); logQ = [];
+  try { navigator.sendBeacon('api/log', new Blob([body], { type: 'application/json' })); } catch {}
+}
+addEventListener('visibilitychange', () => { if (document.hidden) flushLog(); });
+const trackScheme = s => track('scheme', { name: s.name, w: s.width, d: s.depth, h: s.height, levels: s.shelves.length, umbrella: s.umbrella, hooks: s.hooks });
+track('open', { w: innerWidth, h: innerHeight, ua: navigator.userAgent.slice(0, 160) });
+
 if (IN_FRAME) $('csv').textContent = '复制零件表';
 $('admin-bom').hidden = !ADMIN;
 
@@ -37,8 +54,11 @@ const FRIENDLY = [
   [/^AI 摆放检查失败/, 'AI 没能复查摆放位置，可以手动拖动调整'],
 ];
 function oops(msg, detail) { toast(ADMIN && detail ? `${msg}（${detail}）` : msg, 6000); }
+// 实时取景的状态，放在 show() 前面：启动时就会调 show()
+const live = { stream: null, busy: false, off: !navigator.mediaDevices?.getUserMedia || !matchMedia('(pointer: coarse)').matches };
 function show(id) {
   document.querySelectorAll('main > section').forEach(s => s.hidden = s.id !== id);
+  if (S.page !== id) track('page', { to: id });
   S.page = id;
   document.body.classList.toggle('home', id === 's-home');
   const hub = id === 's-home' || id === 's-saved';
@@ -49,6 +69,7 @@ function show(id) {
   renderSteps();
   scrollTo(0, 0);
   viewer?.resize(); if (viewer) placeHandles();
+  syncLive();
 }
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
   if (b.dataset.go === 's-photo' && S.saved) newDesign(); // 存过方案后再「开始设计」= 从头来，不带上次的照片和需求
@@ -137,7 +158,7 @@ async function post(url, body) {
 
 // ---------- 状态 ----------
 fetch('api/status').then(r => r.json()).then(j => {
-  S.mock = j.mock;
+  S.mock = j.mock; $('rec-note').hidden = NO_LOG;
   $('mode').hidden = !ADMIN; // 模拟/AI 状态只给后台（?admin）看
   $('mode').textContent = j.mock ? '模拟模式' : ADMIN ? 'AI：' + j.model : 'AI 已接入'; // 具体模型只给后台（?admin）看
   $('mode').className = 'badge' + (j.mock ? '' : ' live');
@@ -164,11 +185,12 @@ async function addPhotos(files, at) {
     } catch (e) { console.warn('透视检测失败', e); }
     const p = { url, img, aspect, f35, hfov, geo, q: photoQuality(img, geo), ai: '' };
     if (p.q.level !== 'ok' && ++S.nag > 2) p.q.forced = true; // 最多提示 2 次，之后按默认姿态继续
+    track('photo', { at: at ?? S.photos.length, retake: at !== undefined, q: p.q.level, msg: p.q.msg, f35, aspect: Math.round(aspect * 1000) / 1000, forced: !!p.q.forced });
     if (at !== undefined) { URL.revokeObjectURL(S.photos[at].url); S.photos[at] = p; at = undefined; } else S.photos.push(p);
   }
   photosChanged();
 }
-function removePhoto(i) { URL.revokeObjectURL(S.photos[i].url); S.photos.splice(i, 1); photosChanged(); }
+function removePhoto(i) { track('remove', { i }); URL.revokeObjectURL(S.photos[i].url); S.photos.splice(i, 1); photosChanged(); }
 function retake(i) { S.retakeAt = i; $('cam').click(); }
 
 // 三档：ok 能用 / warn 建议重拍（可「仍然使用」）/ bad 必须重拍；最多提示 2 次，之后按默认姿态继续
@@ -176,23 +198,56 @@ const usable = p => p.q.level === 'ok' || p.q.forced || p.accepted;
 function renderPhotos() {
   const box = $('photos'); box.innerHTML = '';
   S.photos.forEach((p, i) => {
-    const d = document.createElement('div'); d.className = 'ph' + (S.best === i && S.photos.length > 1 ? ' best' : '');
-    const ok = p.q.level === 'ok', open = !usable(p), best = S.best === i && S.photos.length > 1 ? '（用这张）' : '';
+    const isBest = bestIdx() === i && S.photos.length > 1;
+    const d = document.createElement('div'); d.className = 'ph' + (isBest ? ' best' : '');
+    const ok = p.q.level === 'ok', open = !usable(p), best = isBest ? '（用这张）' : '';
     const msg = ok ? (S.analyzing ? '分析中…' : p.q.msg + (p.noDoor ? '，门没拍全，尺寸约估' : '') + best) : p.q.msg + (p.q.forced ? '，按默认角度继续，尺寸标「约」' : p.accepted ? '（仍然使用）' : '');
     const ai = p.ai && !S.analyzing ? `<span class="q wait">AI 建议：${p.ai.replace(/[<>&]/g, c => `&#${c.charCodeAt(0)};`)}</span>` : '';
     d.innerHTML = `<img src="${p.url}" alt=""><button class="x" aria-label="删除">✕</button>
-      <div class="tags"><span class="q ${open ? 'bad' : ok && !S.analyzing ? 'ok' : 'wait'}">${msg}</span>${ai}</div>`;
+      <div class="tags"><span class="q ${open ? 'bad' : ok && !S.analyzing ? 'ok' : 'wait'}">${msg}</span>${ai}${!open && !S.photos.some(x => x.tap) ? '<span class="q">点一下要放鞋架的地方</span>' : ''}</div>`;
+    bindTap(d, p);
     if (open) {
       const r = document.createElement('button'); r.className = 'redo'; r.textContent = '重拍这张'; r.onclick = () => retake(i); d.querySelector('.tags').appendChild(r);
-      if (p.q.level === 'warn') { const k = document.createElement('button'); k.className = 'redo'; k.textContent = '仍然使用'; k.onclick = () => { p.accepted = true; renderPhotos(); }; d.querySelector('.tags').appendChild(k); }
+      if (p.q.level === 'warn') { const k = document.createElement('button'); k.className = 'redo'; k.textContent = '仍然使用'; k.onclick = () => { p.accepted = true; track('accept', { i }); renderPhotos(); }; d.querySelector('.tags').appendChild(k); }
     }
     d.querySelector('.x').onclick = () => removePhoto(i);
     box.appendChild(d);
+    if (p.tap) { const el = d.appendChild(pinEl(S.pinNew)), [x, y] = coverMap(p, d).toXY(p.tap); el.style.left = x + 'px'; el.style.top = y + 'px'; } // 放进页面后 .ph 才有尺寸
   });
+  S.pinNew = false; // 只在刚点下时落下，之后重画不再动
+  syncLive();
   $('gen').disabled = !S.photos.some(usable);
   $('after').hidden = !S.photos.length;
   $('gen').textContent = S.schemes.length ? '重新生成方案' : '生成方案';
 }
+
+// 点一下要放鞋架的地方（可选）：记下在原照片里的位置 [u,v]（0~1），只留一个点；横滑时移动超过 8px 不算点
+const bestIdx = () => { const t = S.photos.findIndex(p => p.tap); return t >= 0 ? t : S.best; };
+// .ph img 是 object-fit: cover：盒子坐标和原图坐标互换
+function coverMap(p, box) {
+  const W = box.clientWidth, H = box.clientHeight, k = Math.max(W / p.img.naturalWidth, H / p.img.naturalHeight);
+  const w = p.img.naturalWidth * k, h = p.img.naturalHeight * k, x0 = (W - w) / 2, y0 = (H - h) / 2;
+  return { toUV: (x, y) => [(x - x0) / w, (y - y0) / h], toXY: ([u, v]) => [x0 + u * w, y0 + v * h] };
+}
+function pinEl(drop) {
+  const el = document.createElement('i'); el.className = 'pin' + (drop ? ' drop' : ''); el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.6 7-12.5a7 7 0 0 0-14 0C5 15.4 12 22 12 22z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+  return el;
+}
+function bindTap(d, p) {
+  let down = null;
+  d.onpointerdown = e => { down = e.target.closest('button') ? null : { x: e.clientX, y: e.clientY }; };
+  d.onpointerup = e => {
+    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) return; down = null;
+    const r = d.getBoundingClientRect(), [u, v] = coverMap(p, d).toUV(e.clientX - r.left, e.clientY - r.top);
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    S.photos.forEach(x => delete x.tap); p.tap = [u, v]; S.pinNew = true;
+    track('tap', { i: S.photos.indexOf(p), uv: p.tap.map(x => Math.round(x * 1000) / 1000) });
+    S.placed = false; // 已经进过方案页：回去时按新点重摆
+    renderPhotos();
+  };
+}
+addEventListener('resize', () => { if (S.photos.some(p => p.tap)) renderPhotos(); });
 
 function photosChanged() {
   S.placed = false; S.best = undefined; S.rec = null;
@@ -221,15 +276,26 @@ async function analyze(seq) {
   const segs = ph.map(p => segOf(p.img)); // 和识图并行
   let ai = null;
   try {
-    const j = await post('api/scene', { photos: ph.map(p => ({ image: shrink(p.img), aspect: p.aspect, horizonY: p.geo?.horizonY })), need: $('desc').value });
-    ai = j.scene;
+    const t0 = Date.now(), j = await post('api/scene', { photos: ph.map(p => ({ image: shrink(p.img), aspect: p.aspect, horizonY: p.geo?.horizonY })), need: $('desc').value, sid: NO_LOG ? undefined : SID, seq });
+    ai = j.scene; track('scene', { seq, n: ph.length, ai: !!ai, aiBest: ai?.best, wall: ai?.wall, ms: Date.now() - t0, warning: j.warning });
   } catch (e) { oops('照片分析失败，先按常见角度摆放，可以手动拖动调整', e.message); }
   if (seq !== S.seq) return null; // 期间照片又变了，以新的为准
-  // 用哪张：AI 选的那张透视可用就用它，否则用几何最可靠的一张（AI 的墙脚点只对它选的那张有效）
-  const geoBest = ph.reduce((b, p, i) => p.q.score > ph[b].q.score ? i : b, 0);
-  let best = Number.isInteger(ai?.best) && ph[ai.best]?.q.ok ? ai.best : geoBest;
-  if (ai && best !== ai.best) ai = { ...ai, wallBase: null, doorTop: null, doorBottom: null, door: null };
   ph.forEach((p, i) => { p.ai = Array.isArray(ai?.issues) && typeof ai.issues[i] === 'string' ? ai.issues[i].trim() : ''; });
+  S.best = pickBest(ph, ai); S.analyzing = false; renderPhotos();
+  return { ph, ai, segs };
+}
+// AI 选的那张透视可用就用它，否则用几何最可靠的一张
+function pickBest(ph, ai) {
+  const geoBest = ph.reduce((b, p, i) => p.q.score > ph[b].q.score ? i : b, 0);
+  return Number.isInteger(ai?.best) && ph[ai.best]?.q.ok ? ai.best : geoBest;
+}
+// 摆放前才定用哪张：用户点过哪张就用哪张（覆盖 AI 选的），所以识图回来后再点也算数
+async function sceneFor(ctx) {
+  if (!ctx) return null;
+  let { ph, ai, segs } = ctx;
+  // 用哪张：用户点过的那张，否则 pickBest（AI 的墙脚点只对它选的那张有效，换了张就不用）
+  const t = ph.findIndex(p => p.tap), best = S.best = t >= 0 ? t : pickBest(ph, ai); // 保存效果图也用这张
+  if (ai && best !== ai.best) ai = { ...ai, wallBase: null, doorTop: null, doorBottom: null, door: null };
   const p = ph[best];
   let { hfov, geo } = p;
   if (!p.f35 && !p.geo?.hfovEst && ai?.lens && ai.lens !== 'main' && LENS_MM[ai.lens]) { // 没 EXIF 时按 AI 判断的镜头重算
@@ -237,18 +303,41 @@ async function analyze(seq) {
     try { geo = detectHorizon(p.img, hfov) || geo; } catch {}
   }
   S.rec = validRec(ai?.rec) || DEFAULT_REC;
-  S.best = best; S.analyzing = false; renderPhotos();
   const sp = $('stage-photo'); sp.src = p.url;
   $('stage').style.aspectRatio = `${p.img.naturalWidth} / ${p.img.naturalHeight}`; document.documentElement.style.setProperty('--ar', p.aspect); viewer.resize();
   let light = null; try { light = photoLight(p.img, geo?.horizonY, hfov); } catch {}
   const opts = { f35: p.f35, aspect: p.aspect, geo, hfov, light };
   const scene = toScene(ai, opts);
+  if (p.tap) scene.tap = p.tap;
   scene.weak = !p.q.ok || !!scene.issue; // 本地检查不过，或 AI 三次识图都建议重拍
   p.noDoor = !!ai && !/door/.test(scene.camHSrc); if (p.noDoor) renderPhotos(); // 没有完整的门：尺度只能靠 AI 估
   scene.seg = await Promise.race([segs[best], new Promise(r => setTimeout(r, 6000, null))]); // 分割服务刚启动在加载模型时不等它
   return scene;
 }
 
+// 实时取景：拍照页还没照片时，底块里直接放后置摄像头画面，按「拍照」截一帧当照片（没有 EXIF，焦距靠 vp.js 估）。
+// 只在手机（触屏）上开：电脑上的预览页两个 iframe 会同时开前置摄像头。拿不到（http、拒绝权限、小程序 web-view）就留线稿，「拍照」照旧调系统相机
+async function syncLive() {
+  const want = S.page === 's-photo' && !S.photos.length && !document.hidden && !live.off;
+  if (!want) { live.stream?.getTracks().forEach(t => t.stop()); live.stream = null; $('live').srcObject = null; $('live').hidden = true; return; }
+  if (live.stream || live.busy) return;
+  live.busy = true;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+    live.stream = s; $('live').srcObject = s; await $('live').play(); $('live').hidden = false;
+    track('live', { ok: true });
+  } catch (e) { live.off = true; track('live', { ok: false, err: e.name }); } // 拒绝过就不再弹，本次打开都用系统相机
+  live.busy = false;
+  syncLive(); // 等权限期间可能已离开拍照页
+}
+function snap() {
+  const v = $('live'), c = document.createElement('canvas');
+  v.pause(); // 定格，防止连点拍出两张；照片出来后 syncLive 关摄像头
+  c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+  c.toBlob(b => addPhotos([new File([b], 'live.jpg', { type: 'image/jpeg' })]), 'image/jpeg', 0.92);
+}
+$('cam').onclick = e => { if (live.stream && $('live').videoWidth && !$('live').paused) { e.preventDefault(); snap(); } };
+addEventListener('visibilitychange', syncLive);
 $('cam').onchange = e => { const at = S.retakeAt; S.retakeAt = undefined; addPhotos([...e.target.files], at); e.target.value = ''; };
 $('pick').onchange = e => { addPhotos([...e.target.files]); e.target.value = ''; };
 // 进方案页：照片换过还没重新摆就先等分析结果再摆
@@ -256,14 +345,17 @@ async function enterDesign() {
   if (!S.schemes.length) return;
   if (!S.placed && S.scene) {
     toast('AI 正在分析照片…');
-    const scene = await S.scene;
+    const scene = await S.scene.then(sceneFor);
     show('s-design'); renderDesign(); return placeScene(scene);
   }
   show('s-design'); renderDesign();
 }
 function placeScene(scene) {
   if (!scene) return;
-  viewer.segMap = scene.seg || null; viewer.depthMap = scene.seg?.depth ? { w: scene.seg.w, h: scene.seg.h, data: scene.seg.depth } : null; viewer.placeScene(scene); S.placed = true; showFit(); // 放好后才定下提示和建议宽度，再刷新一次
+  viewer.segMap = scene.seg || null; viewer.depthMap = scene.seg?.depth ? { w: scene.seg.w, h: scene.seg.h, data: scene.seg.depth } : null; viewer.placeScene(scene); S.placed = true; showFit();
+  const ph = S.photos[S.best || 0], av = ph && viewer.aiView(ph.img); $('stage-photo').src = av ? av.toDataURL('image/jpeg', 0.85) : ph?.url || $('stage-photo').src; // 有深度和分割就用「AI 视角」底图
+  const v = viewer;
+  track('place', { seq: S.seq, photo: S.best, tap: scene.tap, seg: !!scene.seg, weak: scene.weak, camH: scene.camH, walls: (v.walls || []).map(w => w.side), door: !!v.door, spots: (v.spots3 || []).map(c => ({ uv: v.photoUV(c.q)?.map(x => Math.round(x * 1000) / 1000), rot: Math.round(c.rot) })), pose: v.pose(), fit: v.fitNote || '' }); // 放好后才定下提示和建议宽度，再刷新一次
   if (scene.weak) toast(`${scene.issue || '照片里地面/墙脚线条不清楚'}，摆放可能不准：可以手动拖动，或点顶部第 2 格回去重拍`, 6000);
   else if (scene.note) toast('AI：' + scene.note);
 }
@@ -283,6 +375,7 @@ function progress(labels) {
   return { doing: i => li[i].className = 'doing', done: i => { li[i].className = 'done'; delete li[i].dataset.sec; }, close: () => { clearInterval(tick); el.hidden = true; } };
 }
 async function generate() {
+  track('gen', { desc: $('desc').value.slice(0, 200), photos: S.photos.length, tapped: S.photos.some(p => p.tap) });
   const btn = $('gen'); btn.disabled = true; btn.textContent = '生成中…';  const photo = !S.placed && !!S.scene; // 有照片且还没摆过：要等照片分析
   const p = progress([...(photo ? ['看懂照片：透视、墙面、门'] : []), '设计方案', S.photos.length ? '摆进你的照片里' : '摆进示例场景里']);
   const [iPhoto, iGen, iPut] = photo ? [0, 1, 2] : [-1, 0, 1];
@@ -292,8 +385,8 @@ async function generate() {
     S.variant = 0;
     const j = await post('api/generate', { description: $('desc').value, variant: 0, ...cons() });
     p.done(iGen); p.doing(iPut);
-    S.schemes = [{ versions: [j.schemes[0]], cur: 0 }]; S.active = 0; S.seen = [j.schemes[0].name]; S.final = null;
-    const scene = S.placed ? null : await (S.scene || toScene(null, { aspect: 0.75 }));
+    S.schemes = [{ versions: [j.schemes[0]], cur: 0 }]; S.active = 0; S.seen = [j.schemes[0].name]; S.final = null; trackScheme(j.schemes[0]);
+    const scene = S.placed ? null : await (S.scene ? S.scene.then(sceneFor) : toScene(null, { aspect: 0.75 }));
     S.rec ||= DEFAULT_REC;
     show('s-design'); renderDesign();
     placeScene(scene);
@@ -304,13 +397,13 @@ $('gen').onclick = generate;
 // 换一个：整个替换成另一个思路的方案（点了才再生成）
 $('another').onclick = async () => {
   const btn = $('another'); btn.disabled = true; btn.textContent = '生成中…';
-  const e = S.schemes[S.active], old = current();
+  const e = S.schemes[S.active], old = current(); track('another');
   try {
     const j = await post('api/generate', { description: $('desc').value, variant: ++S.variant, avoid: S.seen, ...cons() });
     if (S.schemes[S.active] !== e || S.page !== 's-design') throw 0; // 等结果时跳走了：丢掉，不写进别的方案
     // 用户要过的伞杆、挂钩带过去；新方案作为新版本，想回上一个点 v1/v2
     const ns = normalizeScheme({ ...j.schemes[0], umbrella: j.schemes[0].umbrella || old.umbrella, hooks: Math.max(j.schemes[0].hooks || 0, old.hooks) });
-    e.versions.push(ns); e.cur = e.versions.length - 1; S.seen.push(ns.name); S.final = null;
+    e.versions.push(ns); e.cur = e.versions.length - 1; S.seen.push(ns.name); S.final = null; trackScheme(ns);
     renderDesign();
   } catch (e) { if (e !== 0) oops('换方案失败了，请稍后再试一次', e.message); }
   btn.disabled = false; btn.textContent = '换一个';
@@ -318,6 +411,7 @@ $('another').onclick = async () => {
 
 // ---------- 方案 / 修改 ----------
 viewer = new RackViewer($('stage'));
+viewer.onUser = (type, d) => track(type, d);
 const syncSliders = t => {
   showFit();
 };
@@ -339,8 +433,8 @@ viewer.onChange = syncSliders; syncSliders(viewer.t);
 viewer.onFrame = () => placeHandles();
 // 旋转 90°（俯视看：顺时针 = rot 减小）；转了就不再自动贴原来那面墙
 const turn = deg => { viewer.anchor = null; viewer.dragged = true; viewer.set({ rot: ((viewer.t.rot + deg + 540) % 360) - 180 }); };
-$('rot-cw').onclick = () => turn(-90);
-$('rot-ccw').onclick = () => turn(90);
+$('rot-cw').onclick = () => { turn(-90); track('rotate', { by: -90, pose: viewer.pose() }); };
+$('rot-ccw').onclick = () => { turn(90); track('rotate', { by: 90, pose: viewer.pose() }); };
 $('t-reset').onclick = () => viewer.scene0 && viewer.placeScene(viewer.scene0);
 // 分段切换控件面板；尺寸手柄只在「尺寸」面板显示
 S.pane = 'tips';
@@ -414,6 +508,7 @@ function preview(patch) {
   liveT = setTimeout(() => { liveT = 0; const ns = makeScheme(liveNext); viewer.setScheme(ns, true); fillDims(ns); $('scheme-dims').innerHTML = dimsShort(ns); }, 30);
 }
 function commit(patch) {
+  track('dims', { patch });
   clearTimeout(liveT); liveT = 0;
   const s = current(), ns = makeScheme(patch);
   if (JSON.stringify(ns) === JSON.stringify({ ...s, manual: true })) return renderDesign();
@@ -495,6 +590,7 @@ $('revise').onclick = async () => {
   const btn = $('revise'); btn.disabled = true; btn.textContent = '修改中…';
   const e = S.schemes[S.active];
   try {
+    track('revise', { text: fb.slice(0, 200) });
     const j = await post('api/revise', { scheme: current(), feedback: fb, description: $('desc').value, ...cons() });
     if (S.schemes[S.active] !== e || S.page !== 's-design') throw 0; // 等结果时跳走了：丢掉，不贴到别的方案
     const was = current();
@@ -508,6 +604,7 @@ $('revise').onclick = async () => {
 
 // ---------- 材质 + 结算：旋转展示 + 材质/杆色 + 预估价格 ----------
 turntable = new Turntable($('turntable'));
+$('shoe-tog').onclick = e => { const on = !turntable.showShoes; turntable.setShoes(on); e.currentTarget.setAttribute('aria-pressed', on); e.currentTarget.setAttribute('aria-label', on ? '隐藏鞋子' : '显示鞋子'); };
 $('choose').onclick = () => {
   choose();
 };
@@ -587,6 +684,8 @@ $('order').onclick = async () => {
   const ok = storeList([{ id: Date.now(), scheme: S.final, need: $('desc').value, price: estimate(), img: small.toDataURL('image/jpeg', 0.75) }, ...loadList().filter(y => JSON.stringify(y.scheme) !== key)].slice(0, 12));
   if (!ok) return oops('手机存储满了，方案没存上。请到「我的方案」删掉几个旧的再试', 'localStorage setItem failed');
   S.saved = true;
+  track('save', { scheme: S.final, price: estimate(), pose: ph ? viewer.pose() : null });
+  flushLog();
   const blob = await new Promise(d => canvas.toBlob(d, 'image/jpeg', 0.9)), file = new File([blob], '落间方案.jpg', { type: 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: '落间方案' }); return toast('方案已保存'); } catch (e) { if (e.name === 'AbortError') return toast('方案已保存'); }

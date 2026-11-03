@@ -15,7 +15,7 @@
 <main>
 <section id="s-home" class="page hero">
   <div class="head"><h1>落间</h1><button class="hubbtn" data-tab="s-saved" aria-label="我的方案"><svg viewBox="30 0 118 134"  fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M36 16V128M124 16V128M54 6V118M142 6V118M36 16H124L142 6H54ZM36 56H124L142 46H54ZM36 96H124L142 86H54ZM36 128H124L142 118H54Z"/></svg></button>
-  <p class="lead">拍一张照，先试住，再定制。</p></div>
+  <p class="lead">拍一张照，先试住，再定制。</p><p class="rec-note" id="rec-note" hidden>试用版会记录照片和操作，用来改进摆放</p></div>
   <div class="media">
   <svg class="hero-art" viewBox="9 0 160 136" aria-hidden="true">
     <g class="rods">
@@ -42,6 +42,7 @@
   <div class="media">
   <label for="cam" class="guide">
     <i class="sketch" aria-hidden="true"></i>
+    <video id="live" class="live" playsinline muted hidden></video>
   </label>
   <div id="photos" class="photos"></div>
   <ol class="progress" id="gen-progress" hidden></ol>
@@ -72,9 +73,9 @@
       <div class="pill fit-msg" id="fit-msg" hidden></div>
     </div>
     <div class="pane" data-pane="size" hidden>
-      <div class="dial" data-k="width"><span>宽</span><button class="step" data-d="-5">−</button><input type="range" min="30" max="200" step="1"><button class="step" data-d="5">+</button><output></output></div>
-      <div class="dial" data-k="depth"><span>深</span><button class="step" data-d="-1">−</button><input type="range" min="15" max="60" step="1"><button class="step" data-d="1">+</button><output></output></div>
-      <div class="dial" data-k="height"><span>高</span><button class="step" data-d="-5">−</button><input type="range" min="25" max="200" step="1"><button class="step" data-d="5">+</button><output></output></div>
+      <div class="dial" data-k="width"><span>宽</span><button class="step" data-d="-5">−</button><input type="range" min="30" max="200" step="5"><button class="step" data-d="5">+</button><output></output></div>
+      <div class="dial" data-k="depth"><span>深</span><button class="step" data-d="-5">−</button><input type="range" min="15" max="60" step="5"><button class="step" data-d="5">+</button><output></output></div>
+      <div class="dial" data-k="height"><span>高</span><button class="step" data-d="-5">−</button><input type="range" min="25" max="200" step="5"><button class="step" data-d="5">+</button><output></output></div>
       <div class="stepper" data-k="levels"><span>层数</span><button class="step" data-d="-1">−</button><b></b><button class="step" data-d="1">+</button></div>
     </div>
     <div class="pane" data-pane="more" hidden>
@@ -102,7 +103,8 @@
 </section>
 
 <section id="s-pay" class="page flow pay" hidden>
-  <div class="media tt"><div class="turntable" id="turntable"></div></div>
+  <div class="media tt"><div class="turntable" id="turntable"></div>
+    <button class="shoe-tog" id="shoe-tog" aria-label="隐藏鞋子" aria-pressed="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M3 16.5V12a1.5 1.5 0 0 1 1.5-1.5H8l1.6-3.2 3 1.4c.7 1.9 2.5 3.1 4.8 3.4 2 .3 3.6 1.5 3.6 3.2v1.2z"/><path d="M3 16.5v1.5h18v-1.5"/></svg></button></div>
   <div class="sheet">
     <div class="panes">
       <div class="grp"><div class="mhd"><p class="label">隔板</p><button id="rec-use" hidden></button></div>

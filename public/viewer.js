@@ -1,42 +1,21 @@
 // viewer.js — 把方案参数渲染成光轴鞋架，透明背景叠在照片上；拖动/缩放/旋转对位；避开门扇开启范围；结算页旋转展示
+let SNAP = true; export const setSnap = v => { SNAP = v; }; // 评测对比开关
 import * as THREE from './vendor/three.module.js';
 import { buildSkeleton, analyzeSkeleton, BOARD_MATERIALS, ROD_FINISHES, UMBRELLA_OUT } from './rack.js';
-import { SHOES, shoeLayout } from './shoes.js';
+import { shoeLayout } from './shoes.js';
+import SHOE_MODELS from './shoe-models.js';
 
 const MM = 0.001, FOOT = 15; // 底座高 mm
 
-// ---------- 参照鞋几何（每种鞋只建一次）----------
-const shoeGeo = {};
-function shoeParts(kind) {
-  if (shoeGeo[kind]) return shoeGeo[kind];
-  const { L, W, H } = SHOES[kind];
-  // 俯视轮廓：鞋跟略窄、前掌最宽、鞋头圆；shape 的 y = -沿长度，挤出后 rotateX(-90°) → 鞋头朝 +z、高度朝 +y
-  const outline = k => {
-    const sh = new THREE.Shape(), pts = [];
-    for (let i = 0; i <= 24; i++) {
-      const u = i / 24, half = W / 2 * k * (u < 0.68 ? 0.78 + 0.22 * Math.sin(u / 0.68 * Math.PI / 2) : Math.sqrt(Math.max(0, 1 - ((u - 0.68) / 0.32) ** 2)));
-      pts.push([half, -u * L * k - L * (1 - k) / 2]);
-    }
-    const r = pts[0][0];
-    for (let i = 1; i < 8; i++) pts.unshift([r * Math.cos(i / 8 * Math.PI / 2), -L * (1 - k) / 2 + r * 0.6 * Math.sin(i / 8 * Math.PI / 2)]); // 鞋跟圆弧（右半）
-    const right = pts, left = right.slice().reverse().map(([x, y]) => [-x, y]);
-    [...right, ...left].forEach(([x, y], i) => i ? sh.lineTo(x, y) : sh.moveTo(x, y));
-    return sh;
-  };
-  const ex = (sh, depth, bevel) => {
-    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: !!bevel, bevelSize: bevel, bevelThickness: bevel * 1.6, bevelSegments: 3, curveSegments: 6 });
-    g.rotateX(-Math.PI / 2); g.scale(MM, MM, MM); return g;
-  };
-  const soleH = 22, up = outline(0.94);
-  // 鞋头一段低（toe），鞋身后 2/3 高（body）
-  const g = {
-    sole: ex(outline(1), soleH, 0),
-    toe: ex(up, (H - soleH) * 0.45, 10),
-    body: ex(up, (H - soleH) * 0.7, 12),
-  };
-  g.toe.translate(0, soleH * MM, 0); g.body.translate(0, soleH * MM, 0);
-  g.body.scale(1, 1, 0.66); // 鞋身只占后 2/3
-  return shoeGeo[kind] = g;
+// ---------- 参照鞋（shoe-models.js 由 Blender 脚本生成，切面风格；每款几何和材质只建一次，所有鞋架共用）----------
+const shoeGeo = new Set(), shoeModels = {};
+function shoeModel(name) {
+  return shoeModels[name] ||= SHOE_MODELS[name].map(({ c, p, i }) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p.map(v => v * MM / 10), 3));
+    g.setIndex(i); shoeGeo.add(g);
+    return { g, m: new THREE.MeshStandardMaterial({ color: c, roughness: 0.8, flatShading: true }) };
+  });
 }
 
 
@@ -147,11 +126,9 @@ export function buildRack(s, { shoes = false } = {}) {
     mesh(new THREE.BoxGeometry(160 * MM, 20 * MM, sk.D * MM), dark, [u.x, -FOOT + 10, sk.D / 2]);
   }
   if (shoes) {
-    const mats = {};
-    for (const k in SHOES) mats[k] = { up: new THREE.MeshStandardMaterial({ color: SHOES[k].upper, roughness: 0.8 }), sole: new THREE.MeshStandardMaterial({ color: SHOES[k].sole, roughness: 0.9 }) };
     for (const sh of shoeLayout(s).shoes) {
-      const parts = shoeParts(sh.kind), m = mats[sh.kind], o = new THREE.Group();
-      for (const [geo, mat] of [[parts.sole, m.sole], [parts.toe, m.up], [parts.body, m.up]]) { const x = new THREE.Mesh(geo, mat); x.castShadow = true; o.add(x); }
+      const o = new THREE.Group();
+      for (const { g: geo, m } of shoeModel(sh.model)) { const x = new THREE.Mesh(geo, m); x.castShadow = true; o.add(x); }
       o.position.set(sh.x * MM, sh.y * MM, sh.z * MM);
       if (sh.side === 'L') o.scale.x = -1;
       g.add(o);
@@ -162,7 +139,7 @@ export function buildRack(s, { shoes = false } = {}) {
 }
 
 function disposeTree(o) {
-  o.traverse(x => { if (x.isMesh) { if (!Object.values(shoeGeo).some(p => Object.values(p).includes(x.geometry))) x.geometry.dispose(); x.material.dispose(); } });
+  o.traverse(x => { if (x.isMesh && !shoeGeo.has(x.geometry)) { x.geometry.dispose(); x.material.dispose(); } }); // 参照鞋几何和材质共用，不释放
 }
 
 export class RackViewer {
@@ -239,6 +216,8 @@ export class RackViewer {
     return { x: (v.x + 1) / 2 * this.stage.clientWidth, y: (1 - v.y) / 2 * this.stage.clientHeight, front: v.z < 1 };
   }
 
+  // 鞋架现在的位置（使用记录用）：地面坐标、朝向、缩放、在照片里的 [u,v]
+  pose() { const t = this.t, r = x => Math.round(x * 100) / 100; return { x: r(t.x), z: r(t.z), rot: Math.round(t.rot), scale: r(t.scale), uv: this.photoUV(new THREE.Vector3(t.x, 0, t.z))?.map(x => Math.round(x * 1000) / 1000), dragged: this.dragged }; }
   // 照片点 → 相机射线打到地面（按照片坐标，与舞台裁切无关）；打不到或太远返回 null
   floorAt([u, v]) {
     const R = THREE.MathUtils.degToRad, th = Math.tan(R(this.t.hfov) / 2), tv = th / (this.photoAspect || 0.75);
@@ -250,7 +229,7 @@ export class RackViewer {
   // scene = { hfov, camH, horizonY(0=顶 1=底，可超出), roll, spot:[x,y], base:[x,y] 墙脚点, yaw, door:{hinge,latch,swing} }
   placeScene(scene) {
     this.scene0 = scene; this.dragged = false; this.pad = 0; // pad：AI 复查说碰到家具/挡门时禁区外扩的余量（米）
-    const s = scene, R = THREE.MathUtils.degToRad;
+    const s = this.snapScene(scene), R = THREE.MathUtils.degToRad;
     this.photoAspect = s.aspect || 0.75;
     const th = Math.tan(R(s.hfov) / 2), tv = th / this.photoAspect;
     const pitch = THREE.MathUtils.radToDeg(Math.atan((0.5 - s.horizonY) * 2 * tv));
@@ -266,6 +245,13 @@ export class RackViewer {
     if (side) wallP = side.p.clone().addScaledVector(side.t, wallP ? wallP.clone().sub(side.p).dot(side.t) : 0.7); // 投到这面墙推算出的墙脚线上（AI 墙脚点只用来定沿墙的位置）
     this.anchor = wallP ? { p: wallP, p0: wallP.clone(), front: new THREE.Vector3(Math.sin(R(this.t.rot)), 0, Math.cos(R(this.t.rot))) } : null;
     this.pick = null; this.spots3 = [];
+    // 用户在拍照页点过要放的地方：第一个候选就用它（贴最近的墙）；点在墙角时第二个是贴另一面墙（分不清用户要哪面），其余取自动候选里不和它重叠的；点在地平线以上算不出地面点就走自动
+    const tp = s.tap && this.floorAt(s.tap);
+    if (tp) {
+      const S0 = this.spotAt(tp), alt = this.cornerAlt(tp);
+      this.spots3 = [S0, ...(alt ? [alt] : []), ...this.topSpots(3).filter(c => c.q.distanceTo(S0.q) > this.widthM * 0.9)].slice(0, 3);
+      return this.placeAt(S0);
+    }
     // 先按规则贴墙避让，再出 3 个候选：放到第一个，另外两个在地上画成脚印给用户点
     if (this.anchor) {
       this.fitAnchor(); this.spots3 = this.topSpots(3);
@@ -434,6 +420,7 @@ export class RackViewer {
       if (P.length === 1) pts.push(...[[1, 0], [0, 1], [1, 1]].map(([i, j]) => P[0].clone().addScaledVector(T, (i - 0.5) * 0.4).addScaledVector(d, j)));
       this.obstacles.push({ name: o.name, shoe: o.shoe, poly: hull(pts) });
     });
+    this.obstacles.push(...this.depthObstacles());
     return side;
   }
   // 地面点是否在禁区：墙后、家具里（各留 3cm），门扇扫过的扇形（向内开，两侧都算）+ 门洞前 0.9m 的通道
@@ -445,6 +432,23 @@ export class RackViewer {
     if (into > -0.05 && into < 0.9 + pad && along > -0.1 - pad && along < D.w + 0.1 + pad) return true;
     // AI 认铰链常认反（实测把锁侧当铰链），所以锁侧也留 0.6 门宽的余量
     return D.swing !== 'out' && into > -0.05 && (r.length() < D.w + 0.12 + pad || p.distanceTo(D.L) < D.w * 0.6 + 0.1 + pad);
+  }
+  // 脚印（内缩 5cm）里三成以上是分割图的「能挪走的东西」（组 5）
+  onMovable(s) {
+    if (!this.segMap) return false;
+    const off = (this.depthM || 0.3) / 2 - 0.05, tan = new THREE.Vector3(s.front.z, 0, -s.front.x); let n = 0, m = 0;
+    for (let i = 0; i <= 6; i++) for (let j = -1; j <= 1; j++) { const g = this.segAt(s.q.clone().addScaledVector(tan, (i / 6 - 0.5) * (this.widthM - 0.1)).addScaledVector(s.front, j * off)); if (g >= 0) { n++; if (g === 5) m++; } }
+    return n >= 6 && m / n > 0.3;
+  }
+  // 占地矩形压到深度补出的家具（depthObstacles）：和分割图的判断同级，带腿的桌子分割图看得到桌下地面拦不住（g01 被排到玄关桌底下）
+  depthHit(x, z, W = this.widthM, Dp = this.depthM) {
+    const O = (this.obstacles || []).filter(o => o.src === 'depth'); if (!O.length) return false;
+    const R = THREE.MathUtils.degToRad(this.t.rot), c = Math.cos(R), s = Math.sin(R);
+    for (let i = 0; i <= 6; i++) for (let j = 0; j <= 3; j++) {
+      const lx = -W / 2 + i / 6 * (W + (this.umbM || 0)), lz = (j / 3 - 0.5) * Dp, p = new THREE.Vector3(x + lx * c + lz * s, 0, z - lx * s + lz * c);
+      if (O.some(o => inPoly(p, o.poly, 0.03))) return true;
+    }
+    return false;
   }
   // 鞋架占地矩形（含挂伞杆伸出）在 (x,z) 时是否压到禁区
   hasZones() { return !!(this.door || this.walls?.length || this.obstacles?.length); }
@@ -562,6 +566,31 @@ export class RackViewer {
     const a = n < 50 ? 0 : (n * sxy - sx * sy) / (n * sxx - sx * sx), b = (sy - a * sx) / n;
     return (this._dc = { key, ok: a > 0, a, b, depth: k => { const x = (D.data[k] - b) / a; return x > 0.1 ? 1 / x : 10; } });
   }
+  // AI 漏列的家具（a002 的衣柜没列，鞋架插进去）：分割图的家具像素按深度打回 3D，离地 0.1~1.2m 的落到 10cm 地面格子里，
+  // 一格 ≥3 个点就算占用；看到的只是家具正面，离墙 0.8m 以内的格子一直补到墙（家具背后到墙之间也放不下）
+  depthObstacles() {
+    const C = this.depthCal(), M = this.segMap; if (!C?.ok || this.noDepthObs) return [];
+    const cam = new THREE.Vector3(0, this.t.camH, 0), cells = new Map(), G = 0.1;
+    const shoeAt = q => this.obstacles.some(o => o.shoe && inPoly(q, o.poly, 0.3));
+    for (let j = 0; j < M.h; j += 2) for (let i = 0; i < M.w; i += 2) {
+      const k = j * M.w + i; if (M.data[k] !== 4) continue;
+      const p = cam.clone().addScaledVector(this.pixDir((i + 0.5) / M.w, (j + 0.5) / M.h), C.depth(k));
+      if (p.y < 0.1 || p.y > 1.2 || Math.hypot(p.x, p.z) > 6) continue;
+      const key = `${Math.floor(p.x / G)},${Math.floor(p.z / G)}`; cells.set(key, (cells.get(key) || 0) + 1);
+    }
+    const out = [];
+    for (const [key, n] of cells) {
+      if (n < 3) continue;
+      const [cx, cz] = key.split(',').map(Number), pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([a, b]) => new THREE.Vector3((cx + a) * G, 0, (cz + b) * G));
+      if (pts.some(q => this.walls.some(w => q.clone().sub(w.p).dot(w.n) < -0.05))) continue; // 墙后的是隔壁房间
+      if (shoeAt(pts[0])) continue; // 旧鞋架、鞋柜正是要换掉的地方
+      if (this.segAt(new THREE.Vector3((cx + 0.5) * G, 0, (cz + 0.5) * G)) === 1) continue; // 照片里这格地面露着：是空地（c009 细栏杆深度估错落到空地上）
+      const near = this.walls.map(w => [w, pts[0].clone().sub(w.p).dot(w.n)]).filter(x => x[1] < 0.8).sort((x, y) => x[1] - y[1])[0]?.[0];
+      const all = near ? pts.concat(pts.map(q => q.clone().addScaledVector(near.n, -q.clone().sub(near.p).dot(near.n)))) : pts;
+      out.push({ name: '家具（深度）', shoe: false, poly: hull(all), src: 'depth' });
+    }
+    return out;
+  }
   // 按深度图找墙：墙/门像素打回 3D，每个房间方向上沿法向的位置做直方图，尖峰（占墙像素 ≥10%）就是那面墙。返回 { back/left/right: 墙上一点 }
   // 离相机 0.8m 以内的不要：画面边上贴着相机的那一小块墙（g06/r01）会被当成墙，鞋架被挤到镜头前
   depthWalls(N) {
@@ -581,6 +610,22 @@ export class RackViewer {
       if (best != null && bc >= Math.max(60, P.length * 0.1)) out[k] = N[k].clone().multiplyScalar(best * 0.05);
     }
     return out;
+  }
+  // AI 的墙脚点、墙角点常标在墙面上（试用记录 s7mh 三次给的 y 是 0.44/0.73/0.56），墙线就推到很远、鞋架悬空。
+  // 有分割图时把这些点沿竖直方向挪到「地面开始」的位置：点不在地面上就往下找第一个地面像素（最多 0.3 画面高）
+  snapScene(scene) {
+    const M = this.segMap; if (!M || this.noSnap) return scene;
+    const at = (u, v) => M.data[Math.min(M.h - 1, Math.floor(v * M.h)) * M.w + Math.min(M.w - 1, Math.floor(u * M.w))];
+    const snap = p => {
+      if (!Array.isArray(p) || !(p[0] >= 0 && p[0] < 1 && p[1] >= 0 && p[1] < 1)) return p;
+      if (at(p[0], p[1]) === 1) return p;
+      for (let v = p[1]; v < Math.min(1, p[1] + 0.3); v += 1 / M.h) if (at(p[0], v) === 1 && at(p[0], Math.min(0.999, v + 1 / M.h)) === 1) return [p[0], v];
+      return p;
+    };
+    const s = { ...scene, base: snap(scene.base) };
+    if (scene.corner) s.corner = Object.fromEntries(Object.entries(scene.corner).map(([k, c]) => [k, snap(c)]));
+    if (scene.wallLines) s.wallLines = Object.fromEntries(Object.entries(scene.wallLines).map(([k, P]) => [k, Array.isArray(P) ? P.map(snap) : P]));
+    return s;
   }
   // 照片分割图（seg.py：0 其他 1 地面 2 墙 3 门 4 固定家具/楼梯 5 小东西）在地面点处的组号，出画面 -1
   segAt(p) {
@@ -618,24 +663,35 @@ export class RackViewer {
     const front = s => { const tan = new THREE.Vector3(s.front.z, 0, -s.front.x); let k = 0;
       for (let i = 0; i <= 6; i++) for (let j = 0; j <= 2; j++) { const r = s.q.clone().addScaledVector(tan, (i / 6 - 0.5) * W).addScaledVector(s.front, (j - 1) * off0).sub(D.H), al = r.dot(D.u), into = r.dot(D.n); if (into > -0.05 && into < 0.9 && al > 0 && al < D.w) k++; }
       return k / 21 > 0.15; };
-    const S = this.spots(0.1, 0.1).filter(s => !D || !front(s)).map(s => { this.t.rot = s.rot; return { ...s, seg: this.segBad(s), bad: this.footprintBlocked(s.q.x, s.q.z), cost: D ? toDoor(s.q) : s.p0.distanceTo(A.p0) }; });
+    const S = this.spots(0.1, 0.1).filter(s => !D || !front(s)).map(s => { this.t.rot = s.rot; return { ...s, seg: this.segBad(s) || this.depthHit(s.q.x, s.q.z), bad: this.footprintBlocked(s.q.x, s.q.z), mov: this.onMovable(s), cost: D ? toDoor(s.q) : s.p0.distanceTo(A.p0) }; });
     this.t.rot = rot0;
-    S.sort((a, b) => a.seg - b.seg || a.bad - b.bad || a.cost - b.cost);
+    // 压着能挪走的东西（椅子、凳子、盆栽、箱包）也能放，但排在空地后面（g04 第一个候选落到大盆栽上）
+    S.sort((a, b) => a.seg - b.seg || a.mov - b.mov || a.bad - b.bad || a.cost - b.cost);
     // 照片里已有鞋架/鞋柜（AI 起的名字里带）：旧鞋架的位置排第一（换掉它）；鞋柜常是固定的，排第二让用户点。投到离它最近的墙上，没认出墙就沿 AI 墙脚线的方向
     const off = (this.depthM || 0.3) / 2 + 0.01;
     for (const o of this.obstacles || []) if (o.shoe || /鞋[架柜]/.test(o.name)) {
       const c = o.poly.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(o.poly.length);
       // 贴哪面墙：旧鞋架最长那条边和墙平行（只按远近会投到旁边的侧墙上）
       const P = o.poly, e = P.map((p, i) => P[(i + 1) % P.length].clone().sub(p)).reduce((a, b) => b.length() > a.length() ? b : a).normalize();
-      const w = (this.walls || []).filter(w => { const d = c.clone().sub(w.p).dot(w.n); return d > -0.3 && d < 1.2 && Math.abs(w.t.dot(e)) > 0.8; }).sort((a, b) => Math.abs(b.t.dot(e)) - Math.abs(a.t.dot(e)))[0];
-      // 没有对得上的墙（旧鞋架贴着一段没认出的墙）：就按它自己的朝向原地放，正面朝相机
-      const front = w ? w.n.clone() : new THREE.Vector3(-e.z, 0, e.x), q = w ? c.clone().addScaledVector(front, off - c.clone().sub(w.p).dot(front)) : c.clone();
-      if (!w && front.dot(c) > 0) front.negate();
-      const p0 = q.clone().addScaledVector(front, -off);
-      S.splice(/[架凳]/.test(o.name) ? 0 : Math.min(1, S.length), 0, { q, p0, front, rot: THREE.MathUtils.radToDeg(Math.atan2(front.x, front.z)), bad: false, cost: -1, replace: o.name });
+      const near = (this.walls || []).map(w => [w, c.clone().sub(w.p).dot(w.n)]).filter(([, d]) => d > -0.3 && d < 1.2);
+      // 没有和长边平行的墙就贴最近的墙（AI 给的轮廓常歪，长边方向不可信；原地正面朝相机会让短边对着墙，试用记录里 5/5 次这样）
+      const w = near.filter(([w]) => Math.abs(w.t.dot(e)) > 0.8).sort((a, b) => Math.abs(b[0].t.dot(e)) - Math.abs(a[0].t.dot(e)))[0]?.[0] || near.sort((a, b) => a[1] - b[1])[0]?.[0];
+      // 一面墙都不在附近（旧鞋架贴着一段没认出的墙）：就按它自己的朝向原地放，正面朝相机
+      const at = w => {
+        const front = w ? w.n.clone() : new THREE.Vector3(-e.z, 0, e.x), q = w ? c.clone().addScaledVector(front, off - c.clone().sub(w.p).dot(front)) : c.clone();
+        if (!w && front.dot(c) > 0) front.negate();
+        return { q, p0: q.clone().addScaledVector(front, -off), front, rot: THREE.MathUtils.radToDeg(Math.atan2(front.x, front.z)), bad: false, cost: -1, replace: o.name };
+      };
+      // 旧鞋架贴哪面墙常判错（r02/b003/b004 位置对、贴到了侧墙）：紧跟着再给一个同位置、转 90° 贴另一条房间轴的候选（正面朝相机那一侧）。
+      // 那边认出了墙就贴上去，没认出就原地放（AI 的轮廓常歪，不按它的长边转）
+      const main = at(w), f2 = new THREE.Vector3(main.front.z, 0, -main.front.x); if (f2.dot(c) > 0) f2.negate();
+      const w2 = near.map(([x]) => x).find(x => x.n.dot(f2) > 0.8);
+      const q2 = w2 ? c.clone().addScaledVector(f2, off - c.clone().sub(w2.p).dot(f2)) : c.clone();
+      const alt = { q: q2, p0: q2.clone().addScaledVector(f2, -off), front: f2, rot: THREE.MathUtils.radToDeg(Math.atan2(f2.x, f2.z)), bad: false, cost: -1, replace: o.name, altOf: main };
+      S.splice(/[架凳]/.test(o.name) ? 0 : Math.min(1, S.length), 0, main, alt);
     }
     const out = [];
-    for (const s of S) if (out.length < k && out.every(o => o.q.distanceTo(s.q) > W * 0.9)) out.push(s);
+    for (const s of S) if (out.length < k && out.every(o => o === s.altOf || o.q.distanceTo(s.q) > W * 0.9)) out.push(s);
     return out;
   }
   // 按候选摆放
@@ -653,14 +709,19 @@ export class RackViewer {
     requestAnimationFrame(step);
     setTimeout(() => { if (this.pick === c && !this.dragged) this.set({ x: c.q.x, z: c.q.z, rot: c.rot }); }, T + 60); // 后台标签页 rAF 不跑，兜底落到终点
   }
-  // 点地面上一点放鞋架：背面贴到身后最近的墙（点在墙前 1.5m 内），没有墙就原地放、正面朝相机
-  spotAt(p) {
+  // 点地面上一点放鞋架：背面贴到身后最近的墙（点在墙前 1.5m、墙后 0.3m 内：估出的墙线常偏），没有墙就原地放、正面朝相机
+  wallsNear(p) { return (this.walls || []).map(w => [w, p.clone().sub(w.p).dot(w.n)]).filter(([, d]) => d > -0.3 && d < 1.5).sort((a, b) => a[1] - b[1]); }
+  spotAt(p, w = this.wallsNear(p)[0]?.[0]) {
     const off = (this.depthM || 0.3) / 2 + 0.01;
-    const w = (this.walls || []).map(w => [w, p.clone().sub(w.p).dot(w.n)]).filter(([, d]) => d > -0.1 && d < 1.5).sort((a, b) => a[1] - b[1])[0]?.[0];
     let front;
     if (w) front = w.n.clone(); else { front = p.clone().setY(0).negate().normalize(); if (this.anchor) front = this.anchor.front.clone(); }
     const q = w ? p.clone().addScaledVector(front, off - p.clone().sub(w.p).dot(front)) : p.clone().setY(0);
     return { q, p0: q.clone().addScaledVector(front, -off), front, rot: THREE.MathUtils.radToDeg(Math.atan2(front.x, front.z)) };
+  }
+  // 点在墙角（第二近的墙只比最近的远不到 0.8m）：贴第二面墙的放法，没有就 null
+  cornerAlt(p) {
+    const [a, b] = this.wallsNear(p);
+    return a && b && b[1] - a[1] < 0.8 ? this.spotAt(p, b[0]) : null;
   }
   // 候选脚印（除当前那个）在地面上的四角
   ghosts() {
@@ -742,7 +803,7 @@ export class RackViewer {
       ray.setFromCamera(v, this.camera);
       return ray.ray.intersectPlane(plane, new THREE.Vector3());
     };
-    let last = null, pinch = null, hold = null, zone = null, down = null;
+    let last = null, pinch = null, hold = null, zone = null, down = null, moved = false;
     const pinchState = () => { const [a, b] = [...pts.values()]; return { dist: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) }; };
     // 按在门框/家具框上、8px 内不动 350ms 才进入拖框（快速拖仍是拖鞋架，不误触）
     el.addEventListener('pointerdown', e => {
@@ -750,7 +811,7 @@ export class RackViewer {
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       clearTimeout(hold); hold = null;
       if (pts.size === 1) {
-        last = floorHit(e); down = { x: e.clientX, y: e.clientY, t: performance.now(), p: last?.clone() };
+        last = floorHit(e); down = { x: e.clientX, y: e.clientY, t: performance.now(), p: last?.clone() }; moved = false;
         const r = el.getBoundingClientRect(), z = this.zoneAt(e.clientX - r.left, e.clientY - r.top);
         if (z && last) hold = setTimeout(() => {
           hold = null; zone = { ...z, start: last.clone() };
@@ -767,10 +828,10 @@ export class RackViewer {
       if (pts.size === 1 && !last) last = floorHit(e);
       else if (pts.size === 1) {
         const p = floorHit(e); if (!p) return;
-        this.anchor = null; this.dragged = true; // 用户拖过就不再自动贴墙，AI 复查也不再挪它
+        this.anchor = null; this.dragged = moved = true; // 用户拖过就不再自动贴墙，AI 复查也不再挪它
         this.set({ x: this.t.x + p.x - last.x, z: this.t.z + p.z - last.z }); last = p;
       } else if (pts.size === 2 && pinch) {
-        const c = pinchState(); this.dragged = true;
+        const c = pinchState(); this.dragged = moved = true;
         this.set({ scale: THREE.MathUtils.clamp(pinch.scale * c.dist / pinch.dist, 0.5, 2), rot: pinch.rot - THREE.MathUtils.radToDeg(c.ang - pinch.ang) });
       }
     });
@@ -780,9 +841,10 @@ export class RackViewer {
       const r = el.getBoundingClientRect(); v.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(v, this.camera);
       if (ray.intersectObject(this.rack, true).length) return;
       const g = this.ghosts().find(({ poly }) => inPoly(p, poly, 0.1));
+      this.onUser?.(g ? 'ghost' : 'floor', g ? { k: this.spots3.indexOf(g.s) } : { uv: this.photoUV(p)?.map(x => Math.round(x * 1000) / 1000) });
       this.placeAt(g ? g.s : this.spotAt(p), true);
     };
-    const up = e => { pts.delete(e.pointerId); pinch = null; last = null; const wasHold = !!zone; clearTimeout(hold); hold = null; if (zone) { this.endZone(zone); zone = null; } if (!wasHold && e.type === 'pointerup') tap(e); down = null; };
+    const up = e => { pts.delete(e.pointerId); pinch = null; last = null; const wasHold = !!zone; clearTimeout(hold); hold = null; if (zone) { this.endZone(zone); this.onUser?.('zone', { kind: zone.kind }); zone = null; } if (moved && !pts.size) { moved = false; this.onUser?.('move', this.pose()); } if (!wasHold && e.type === 'pointerup') tap(e); down = null; };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
     el.addEventListener('wheel', e => {
       e.preventDefault();
@@ -803,6 +865,25 @@ export class RackViewer {
     r.setPixelRatio(Math.min(2, devicePixelRatio)); this.resize();
     return out;
   }
+  // 方案页的「AI 视角」底图：深度图（越近越亮）上叠一层淡淡的原照片，再按分割图给地面、墙、门、家具上色（用户 2026-11-03 选定）。
+  // 没有分割或深度时返回 null，照旧用照片
+  aiView(img) {
+    const D = this.depthMap, M = this.segMap; if (!D || !M || D.w !== M.w || D.h !== M.h) return null;
+    const dc = document.createElement('canvas'), sc = document.createElement('canvas'); dc.width = sc.width = D.w; dc.height = sc.height = D.h;
+    const di = dc.getContext('2d').createImageData(D.w, D.h), si = sc.getContext('2d').createImageData(D.w, D.h);
+    let lo = Infinity, hi = -Infinity; for (const d of D.data) { lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    for (let k = 0; k < D.w * D.h; k++) {
+      const y = AI_VIEW.dark + (255 - AI_VIEW.dark) * (D.data[k] - lo) / (hi - lo || 1); di.data.set([y, y, y, 255], k * 4);
+      si.data.set([...(AI_VIEW.seg[M.data[k]] || AI_VIEW.seg[0]), 255], k * 4);
+    }
+    dc.getContext('2d').putImageData(di, 0, 0); sc.getContext('2d').putImageData(si, 0, 0);
+    const out = document.createElement('canvas'); out.width = img.naturalWidth; out.height = img.naturalHeight;
+    const g = out.getContext('2d'), W = out.width, H = out.height;
+    g.drawImage(dc, 0, 0, W, H);
+    g.globalAlpha = AI_VIEW.photo; g.drawImage(img, 0, 0, W, H);
+    g.globalAlpha = AI_VIEW.tint; g.globalCompositeOperation = 'color'; g.drawImage(sc, 0, 0, W, H); // 只取色块的色相饱和度，明暗还是深度
+    return out;
+  }
 
   // 照片 + 3D 合成一张效果图（照片按 object-fit: cover 绘制，与页面显示一致）
   snapshot(img) {
@@ -819,7 +900,10 @@ export class RackViewer {
   }
 }
 
-// 结算页：产品在纯色"影棚"里展示。单指拖动 = 水平 360° 转 + 上下俯仰；双指 / 滚轮缩放；双击复位；松手后惯性转，慢慢回到自动旋转
+// 方案页「AI 视角」底图：dark 最远处的灰度，photo 原照片透明度，tint 分割色块透明度，seg 各组颜色（0 其他 1 地面 2 墙 3 门 4 家具 5 能挪走的）
+const AI_VIEW = { dark: 30, photo: 0.1, tint: 0.45, seg: { 0: [205, 202, 212], 1: [214, 190, 160], 2: [236, 234, 240], 3: [150, 120, 95], 4: [120, 130, 165], 5: [170, 185, 160] } };
+const TT_PAD = 0.08, TILT = [-0.35, 1.45]; // 结算页展示：模型到画面四边各留画面宽/高的 8%；俯仰范围（弧度）
+// 结算页：产品在纯色"影棚"里展示。单指拖动 = 水平 360° 转 + 上下俯仰；双击复位；不给缩放（模型显示大小只跟实际尺寸走）；松手后惯性转，慢慢回到自动旋转
 export class Turntable {
   constructor(el) {
     this.el = el;
@@ -839,13 +923,12 @@ export class Turntable {
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.ShadowMaterial({ opacity: 0.18 }));
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.scene.add(ground);
     this.spin = new THREE.Group(); this.scene.add(this.spin);
-    this.running = false; this.reset();
-    const pts = new Map(); let pinch = null, lastTap = 0;
+    this.running = false; this.showShoes = true; this.reset();
+    const pts = new Map(); let lastTap = 0;
     el.style.touchAction = 'none';
     el.addEventListener('pointerdown', e => {
       try { el.setPointerCapture(e.pointerId); } catch {} pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.vel = 0; this.hold = true;
-      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.zoom }; }
       if (pts.size === 1) { if (e.timeStamp - lastTap < 300) this.reset(); lastTap = e.timeStamp; }
     });
     el.addEventListener('pointermove', e => {
@@ -853,38 +936,57 @@ export class Turntable {
       const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
       if (pts.size === 1) {
         this.spin.rotation.y += dx * 0.012; this.v2 = dx * 0.0012;
-        this.tilt = THREE.MathUtils.clamp(this.tilt + dy * 0.008, -0.35, 1.45);
-      } else if (pinch) {
-        const [a, b] = [...pts.values()];
-        this.zoom = THREE.MathUtils.clamp(pinch.zoom * pinch.d / Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), 0.35, 2.5);
+        this.tilt = THREE.MathUtils.clamp(this.tilt + dy * 0.008, TILT[0], TILT[1]);
       }
       this.frame(); this.render();
     });
-    const up = e => { pts.delete(e.pointerId); pinch = null; if (!pts.size) { this.hold = false; this.vel = Math.abs(this.v2 || 0) > 0.002 ? this.v2 : 0; this.v2 = 0; } };
+    const up = e => { pts.delete(e.pointerId); if (!pts.size) { this.hold = false; this.vel = Math.abs(this.v2 || 0) > 0.002 ? this.v2 : 0; this.v2 = 0; } };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-    el.addEventListener('wheel', e => { e.preventDefault(); this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.08 : 0.93), 0.35, 2.5); this.frame(); this.render(); }, { passive: false });
     new ResizeObserver(() => this.resize()).observe(el);
   }
-  reset() { this.tilt = 0.32; this.zoom = 0.78; this.vel = 0.0022; this.spin.rotation.y = 0.5; this.frame(); }
+  reset() { this.tilt = 0.32; this.vel = 0.0022; this.spin.rotation.y = 0.5; this.frame(); }
   resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight; if (!w || !h) return;
     this.renderer.setSize(w, h, false); // false：不改画布 CSS 尺寸（CSS 已铺满），否则 ResizeObserver 会循环
-    this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.frame(); this.render();
+    this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.fit(); this.render();
   }
   setScheme(s) {
     this.cur = s;
     disposeTree(this.spin); this.spin.clear();
-    const { group, sk } = buildRack(s);
-    this.size = { W: sk.W * MM + (sk.umbrella ? 0.24 : 0), D: sk.D * MM, H: sk.H * MM + FOOT * MM };
-    this.spin.add(group); this.frame(); this.render();
+    const { group, sk } = buildRack(s, { shoes: this.showShoes });
+    // 绕转轴（y 轴）装下整个模型（含参照鞋、伞杆）的圆筒：任何角度都不出画面
+    const box = new THREE.Box3().setFromObject(group);
+    const R = Math.max(...[box.min.x, box.max.x].flatMap(x => [box.min.z, box.max.z].map(z => Math.hypot(x, z))));
+    this.size = { R, y0: box.min.y, y1: box.max.y };
+    this.spin.add(group); this.fit(); this.render();
   }
-  // 相机绕产品中心做球面轨道：tilt 俯仰（弧度，负 = 从下往上看），zoom 距离倍数；距离按尺寸自动取景
+  setShoes(on) { this.showShoes = on; if (this.cur) this.setScheme(this.cur); }
+  // 相机绕产品中心做球面轨道，tilt 俯仰（弧度，负 = 从下往上看）；距离 this.dist 固定，转动和俯仰时模型大小不变
   frame() {
     if (!this.size) return;
-    const { W, D, H } = this.size, r = Math.hypot(W, D, H) / 2 + 0.03, c = this.camera;
-    const dist = r / Math.sin(THREE.MathUtils.degToRad(Math.min(c.fov, c.fov * c.aspect) / 2)) * this.zoom;
-    const ty = H * 0.48;
-    c.position.set(0, ty + dist * Math.sin(this.tilt), dist * Math.cos(this.tilt)); c.lookAt(0, ty, 0); c.updateProjectionMatrix();
+    const c = this.camera, ty = (this.size.y0 + this.size.y1) / 2, d = this.dist;
+    c.position.set(0, ty + d * Math.sin(this.tilt), d * Math.cos(this.tilt)); c.lookAt(0, ty, 0); c.updateMatrixWorld();
+  }
+  // 求一个距离，让整个俯仰范围内都装得下模型：圆筒上下两圈投影后，四周各留 TT_PAD 的空白（二分）
+  fit() {
+    if (!this.size) return;
+    const { R, y0, y1 } = this.size, c = this.camera, lim = 1 - 2 * TT_PAD, v = new THREE.Vector3(), tilt = this.tilt;
+    c.updateProjectionMatrix();
+    const fits = d => {
+      this.dist = d;
+      for (let t = 0; t <= 8; t++) {
+        this.tilt = TILT[0] + (TILT[1] - TILT[0]) * t / 8; this.frame();
+        for (let i = 0; i < 32; i++) for (const y of [y0, y1]) {
+          const a = i / 32 * Math.PI * 2; v.set(R * Math.cos(a), y, R * Math.sin(a));
+          if (v.applyMatrix4(c.matrixWorldInverse).z > -c.near) return false; // 相机进了圆筒
+          v.applyMatrix4(c.projectionMatrix); if (Math.abs(v.x) > lim || Math.abs(v.y) > lim) return false;
+        }
+      }
+      return true;
+    };
+    let lo = 0, hi = 1; while (!fits(hi) && hi < c.far) hi *= 2;
+    for (let k = 0; k < 20; k++) { const m = (lo + hi) / 2; if (fits(m)) hi = m; else lo = m; }
+    this.dist = Math.min(c.far * 0.9, hi); this.tilt = tilt; this.frame();
   }
   render() { this.renderer.render(this.scene, this.camera); }
   start() {

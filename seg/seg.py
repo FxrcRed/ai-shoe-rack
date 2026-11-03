@@ -17,11 +17,13 @@ GROUPS = {
     1: ['floor', 'rug', 'road', 'sidewalk', 'path', 'earth', 'ground', 'carpet'],
     2: ['wall', 'building', 'column', 'house', 'fence', 'pillar'],
     3: ['door', 'screen door', 'double door'],
-    4: ['cabinet', 'table', 'chair', 'sofa', 'shelf', 'armchair', 'seat', 'desk', 'wardrobe', 'chest of drawers', 'counter',
-        'bookcase', 'coffee table', 'bench', 'kitchen island', 'swivel chair', 'buffet', 'stool', 'ottoman', 'bed', 'fireplace',
-        'refrigerator', 'radiator', 'stairs', 'stairway', 'step', 'bannister', 'railing', 'bathtub', 'washer', 'case', 'plant',
+    4: ['cabinet', 'table', 'sofa', 'shelf', 'seat', 'desk', 'wardrobe', 'chest of drawers', 'counter',
+        'bookcase', 'coffee table', 'bench', 'kitchen island', 'buffet', 'bed', 'fireplace',
+        'refrigerator', 'radiator', 'stairs', 'stairway', 'step', 'bannister', 'railing', 'bathtub', 'washer', 'case',
         'piano', 'sideboard', 'console table', 'dresser'],
-    5: ['box', 'bag', 'basket', 'ashcan', 'plaything', 'apparel', 'bottle', 'vase', 'pot', 'cushion', 'pillow', 'towel'],
+    # 椅子、凳子、脚凳、盆栽随手能挪开，它们占的地方也能放鞋架（用户 2026-11-03 定）
+    5: ['box', 'bag', 'basket', 'ashcan', 'plaything', 'apparel', 'bottle', 'vase', 'pot', 'cushion', 'pillow', 'towel',
+        'chair', 'armchair', 'swivel chair', 'stool', 'ottoman', 'plant'],
 }
 W = 256
 

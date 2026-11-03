@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { normalizeScheme } from './public/rack.js';
-import { buildGenerateMessages, buildReviseMessages, buildSceneMessages, chat, mergeScenes, mockGenerate, mockRevise } from './ai.js';
+import { buildGenerateMessages, tame, buildReviseMessages, buildSceneMessages, chat, mergeScenes, mockGenerate, mockRevise } from './ai.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(ROOT, 'public');
@@ -24,6 +24,8 @@ const env = {
   model: process.env.SEMANTIX_MODEL || 'deepseek-v4-flash',
   visionModel: process.env.SEMANTIX_VISION_MODEL || '', // 能识图的模型，逗号分隔可写多个（依次备用），用 node probe-vision.js 找
 };
+// 识图可以单独走另一家（如千问）：VISION_BASE_URL + VISION_API_KEY + VISION_MODEL，不填就和文字用同一家
+if (process.env.VISION_MODEL) Object.assign(env, { visionModel: process.env.VISION_MODEL, visionBase: process.env.VISION_BASE_URL, visionKey: process.env[process.env.VISION_API_KEY_VAR || 'VISION_API_KEY'] });
 const PORT = +process.env.PORT || 8787;
 // 本地语义分割服务（seg/seg.py，Python）：SEG=off 不用；默认本机 8790，没在跑就自动启动一个（第一次要下载模型、加载约 10 秒）。
 // 起不来（没装 Python/torch）就不用，摆放照常，只是少了「压家具/挡门」的检查和改窄建议
@@ -41,7 +43,10 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 // 照片评测（tools/photo-eval/，只在本机用）：评测页和测试照片按目录托管；识图原始结果按照片缓存，改合并/几何时重跑不花额度
 const EVAL = path.join(ROOT, 'tools', 'photo-eval'), DEV_DIRS = { '/eval/': EVAL, '/test-photos/': path.join(ROOT, 'test-photos') };
 const isLocal = req => /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress);
-const cacheFile = k => /^[\w.-]{1,80}$/.test(k || '') ? path.join(EVAL, 'cache', k + '.json') : null;
+// 评测识图缓存按识图模型分目录（默认模型沿用 cache/，换模型时 EVAL_CACHE=cache-qwen 之类）
+// 使用记录（朋友试用，页面上写明了会记录）：每次打开页面一个 sid，logs/<sid>/ 下存 events.jsonl、发给 AI 的压缩照片、识图结果
+const LOGS = path.join(ROOT, 'logs'), logDir = sid => /^[\w-]{8,40}$/.test(sid || '') ? path.join(LOGS, sid) : null;
+const cacheFile = k => /^[\w.-]{1,80}$/.test(k || '') ? path.join(EVAL, process.env.EVAL_CACHE || 'cache', k + '.json') : null;
 
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); };
 const readBody = req => new Promise((ok, fail) => {
@@ -60,7 +65,7 @@ async function api(req, res, url) {
     if (mockWanted) return send(res, 200, { schemes: mockGenerate(body), mock: true });
     try {
       const out = await chat(env, buildGenerateMessages(body), 0.8);
-      const list = (out.schemes || []).slice(0, 1).map(s => normalizeScheme(s, consOf(body)));
+      const list = (out.schemes || []).slice(0, 1).map(s => normalizeScheme(tame(s, body.description), consOf(body)));
       if (!list.length) throw new Error('模型没给出方案');
       return send(res, 200, { schemes: list, mock: false });
     } catch (e) {
@@ -74,7 +79,9 @@ async function api(req, res, url) {
     let err;
     for (let i = start; i < start + tries; i++) {
       stat.calls++;
-      try { const out = await chat({ ...env, timeout, model: models[i % models.length] }, messages, temp, { thinking: { type: 'disabled' } }); stat.tokens += out.usage?.total_tokens || 0; return out; }
+      // 关思考的参数各家不同：DeepSeek 认 thinking.type，千问（DashScope）认 enable_thinking
+      const own = env.visionBase ? { baseUrl: env.visionBase, key: env.visionKey } : {}, off = /dashscope/.test(own.baseUrl || env.baseUrl) ? { enable_thinking: false } : { thinking: { type: 'disabled' } };
+      try { const out = await chat({ ...env, ...own, timeout, model: models[i % models.length] }, messages, temp, off); stat.tokens += out.usage?.total_tokens || 0; return out; }
       catch (e) { console.warn(`识图失败（${models[i % models.length]}）：${e.message.slice(0, 200)}`); err = err || e; await new Promise(r => setTimeout(r, 1500 * (i - start + 1))); }
     }
     throw err;
@@ -89,6 +96,8 @@ async function api(req, res, url) {
   }
   if (url.pathname === '/api/scene') {
     if (!body.image && !body.photos?.length) return send(res, 400, { error: '缺少照片' });
+    const ld = logDir(body.sid), logScene = o => { if (ld) try { fs.writeFileSync(path.join(ld, `scene-${body.seq | 0}.json`), JSON.stringify(o)); } catch {} };
+    if (ld) try { fs.mkdirSync(ld, { recursive: true }); (body.photos || []).forEach((p, i) => typeof p.image === 'string' && fs.writeFileSync(path.join(ld, `photo-${body.seq | 0}-${i}.jpg`), Buffer.from(p.image.split(',')[1] || '', 'base64'))); } catch {}
     const cf = isLocal(req) && cacheFile(body.cacheKey), cached = cf && fs.existsSync(cf) && JSON.parse(fs.readFileSync(cf, 'utf8'));
     if (cached) return send(res, 200, { scene: mergeScenes(cached.runs), runs: cached.runs.length, raw: cached.runs, ms: cached.ms, calls: cached.calls, tokens: cached.tokens, cached: true });
     if (!env.key || !env.visionModel) return send(res, 200, { scene: null, mock: true });
@@ -100,10 +109,17 @@ async function api(req, res, url) {
       console.log(`识图共识：${runs.length} 次结果，墙 ${runs.map(r => r.wall).join('/')}`);
       const ms = Date.now() - t0;
       if (cf) { fs.mkdirSync(path.dirname(cf), { recursive: true }); fs.writeFileSync(cf, JSON.stringify({ runs, ms, ...stat })); }
+      logScene({ runs, ms, ...stat });
       return send(res, 200, { scene: mergeScenes(runs), runs: runs.length, mock: false, ...(cf ? { raw: runs, ms, ...stat } : {}) });
     } catch (e) {
       return send(res, 200, { scene: null, mock: true, warning: 'AI 识图失败，已按常见拍摄角度摆放：' + e.message });
     }
+  }
+  if (url.pathname === '/api/log') { // { sid, events: [{ t, type, ... }] }：追加到 logs/<sid>/events.jsonl，单个会话最多 2MB
+    const ld = logDir(body.sid); if (!ld || !Array.isArray(body.events)) return send(res, 400, { error: 'sid' });
+    fs.mkdirSync(ld, { recursive: true }); const f = path.join(ld, 'events.jsonl');
+    if (!fs.existsSync(f) || fs.statSync(f).size < 2e6) fs.appendFileSync(f, body.events.slice(0, 200).map(e => JSON.stringify(e)).join('\n') + '\n');
+    return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/eval-save' && isLocal(req)) { // 评测结果：{ run, files: { 名字: JSON 对象或 dataURL 图片 } }
     if (!/^[\w.-]{1,40}$/.test(body.run || '')) return send(res, 400, { error: 'run' });

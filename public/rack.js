@@ -28,10 +28,13 @@ const FOOT_DEDUCT = 0;
 
 const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// 尺寸取 5cm 的倍数，方便下料；上限不是 5 的倍数时往下取，不超出可用空间
+const r5 = v => Math.round(v / 5) * 5;
+const fit5 = (v, a, b) => clamp(r5(v), a, Math.max(a, Math.floor(b / 5) * 5));
 
 export function evenShelves(n, height) {
   if (n <= 1) return [5];
-  return Array.from({ length: n }, (_, i) => Math.round(5 + i * (height - 5) / (n - 1)));
+  return Array.from({ length: n }, (_, i) => r5(5 + i * (height - 5) / (n - 1)));
 }
 
 // 把 AI / 模拟 / 用户给的参数夹到可制造范围内，并满足用户的可用尺寸
@@ -43,14 +46,14 @@ export function normalizeScheme(raw = {}, cons = {}) {
   const maxW = num(cons.maxWidth, 200) || 200, maxD = num(cons.maxDepth, 60) || 60, maxH = num(cons.maxHeight, 200) || 200;
   if (s.umbrella && maxW - UMBRELLA_OUT - 2 < 30) s.umbrella = false; // 可用宽度连最窄架子 + 伞杆都放不下：去掉伞杆，不让总宽悄悄超限
   const umbW = s.umbrella ? UMBRELLA_OUT + 2 : 0;
-  s.width = Math.round(clamp(num(raw.width, 80), 30, Math.max(30, Math.min(200, maxW - umbW))));
-  s.depth = Math.round(clamp(num(raw.depth, 30), 15, Math.max(15, Math.min(60, maxD))));
+  s.width = fit5(num(raw.width, 80), 30, Math.min(200, maxW - umbW));
+  s.depth = fit5(num(raw.depth, 30), 15, Math.min(60, maxD));
   // 带挂伞杆时：伞尖立在接水盘里，伞杆在顶下 5cm 挡住伞身，所以总高至少 55cm
   const minH = Math.min(s.umbrella ? 55 : 25, Math.max(25, maxH));
-  s.height = Math.round(clamp(num(raw.height, 60), minH, Math.max(25, Math.min(200, maxH))));
+  s.height = fit5(num(raw.height, 60), minH, Math.max(25, Math.min(200, maxH)));
   let sh = Array.isArray(raw.shelves) ? raw.shelves.map(x => num(x, NaN)).filter(Number.isFinite) : [];
   if (!sh.length) sh = evenShelves(clamp(Math.round(num(raw.levels, 3)), 1, 8), s.height);
-  sh = sh.map(h => Math.round(clamp(h, 3, s.height))).sort((a, b) => a - b);
+  sh = sh.map(h => fit5(h, 5, s.height)).sort((a, b) => a - b);
   const out = [];
   for (const h of sh) if (!out.length || h - out[out.length - 1] >= MIN_GAP) out.push(h);
   s.shelves = out.slice(0, 8);

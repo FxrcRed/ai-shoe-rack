@@ -1,7 +1,54 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "shoe-rack", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 8787 },
-    { "name": "shoe-rack-eval", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 8788, "env": { "PORT": "8788" } }
+    {
+      "name": "shoe-rack",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "shoe-rack-eval",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 8788,
+      "env": {
+        "PORT": "8788"
+      }
+    },
+    {
+      "name": "shoe-rack-qwen",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 8791,
+      "env": {
+        "PORT": "8791",
+        "VISION_MODEL": "qwen3-vl-plus",
+        "VISION_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "VISION_API_KEY_VAR": "QWEN_API_KEY",
+        "EVAL_CACHE": "cache-qwen3-vl-plus"
+      }
+    },
+    {
+      "name": "shoe-rack-qwen37",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 8792,
+      "env": {
+        "PORT": "8792",
+        "VISION_MODEL": "qwen3.7-plus",
+        "VISION_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "VISION_API_KEY_VAR": "QWEN_API_KEY",
+        "EVAL_CACHE": "cache-qwen37-plus"
+      }
+    }
   ]
 }
