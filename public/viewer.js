@@ -279,7 +279,8 @@ export class RackViewer {
       }
       const S0 = this.spots3[0], note = [this.fitNote, this.suggestW];
       if (narrow) { this.placeAt(S0); this.suggestW = Math.round(narrow.W * 100); this.fitNote = `门边放不下 ${Math.round(this.widthM * 100)}cm 宽，建议宽度 ≤ ${this.suggestW}cm`; return; }
-      if (S0) { this.placeAt(S0); if (S0.bad) [this.fitNote, this.suggestW] = note; } // 都压门或家具：保留「放不下 / 建议宽度」的提示
+      // 都压门或家具：保留「放不下 / 建议宽度」的提示。有分割图且它说这里没压到就不提示：AI 给的门、家具点常偏（g12 位置对却提示太宽）
+      if (S0) { this.placeAt(S0); if (S0.bad && (!this.segMap || S0.seg)) [this.fitNote, this.suggestW] = note; }
       return;
     }
     const hit = this.floorAt(s.spot);
