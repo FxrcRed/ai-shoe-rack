@@ -270,7 +270,12 @@ export class RackViewer {
       const S0 = this.spots3[0], note = [this.fitNote, this.suggestW];
       if (narrow) { this.placeAt(S0); this.suggestW = Math.round(narrow.W * 100); this.fitNote = `门边放不下 ${Math.round(this.widthM * 100)}cm 宽，建议宽度 ≤ ${this.suggestW}cm`; return; }
       // 都压门或家具：保留「放不下 / 建议宽度」的提示。有分割图且它说这里没压到就不提示：AI 给的门、家具点常偏（g12 位置对却提示太宽）
-      if (S0) { this.placeAt(S0); if (S0.bad && (!this.segMap || S0.seg)) [this.fitNote, this.suggestW] = note; }
+      if (S0) {
+        this.placeAt(S0);
+        if (S0.bad && (!this.segMap || S0.seg)) [this.fitNote, this.suggestW] = note;
+        // 分割图说每个普通候选都压在家具上、脚下也不是地面（门边全是嵌入柜，国内玄关常见），又没有旧鞋架可换：AI 禁区没拦住也提示放不下
+        else if (!this.noSegNofit && this.segMap && !this.spots3.some(c => c.replace) && this.spots3.filter(c => !c.altOf).every(c => { const w = this.segWhy(c); return w.includes('onFurn') && w.includes('notFloor'); })) this.fitNote = NOFIT_NOTE;
+      }
       return;
     }
     const hit = this.floorAt(s.spot);
@@ -438,6 +443,14 @@ export class RackViewer {
     // AI 认铰链常认反（实测把锁侧当铰链），所以锁侧也留 0.6 门宽的余量
     return D.swing !== 'out' && into > -0.05 && (r.length() < D.w + 0.12 + pad || p.distanceTo(D.L) < D.w * 0.6 + 0.1 + pad);
   }
+  // 换旧鞋架的候选贴墙那一片在 BUILTIN_Y 两个高度（都高过普通鞋柜、换鞋凳）六成以上还是家具：是到顶的嵌入柜，不当旧鞋柜换。
+  // 104 张评测：换旧鞋架的 16 张最多 3/6，放不下的 h006/k001/m007/q015/s008 都在 4/6 以上；按 AI 轮廓中心查不行（k002 中心偏到墙上）
+  builtIn(c) {
+    if (!this.segMap || this.noBuiltIn) return false;
+    const tan = new THREE.Vector3(c.front.z, 0, -c.front.x); let n = 0, f = 0;
+    for (const d of [-0.25, 0, 0.25]) for (const y of BUILTIN_Y) { const g = this.segAt(c.q.clone().addScaledVector(tan, d).setY(y)); if (g >= 0) { n++; if (g === 4) f++; } }
+    return n >= 4 && f / n > 0.6;
+  }
   // 脚印（内缩 5cm）里三成以上是分割图的「能挪走的东西」（组 5）
   onMovable(s) {
     if (!this.segMap) return false;
@@ -506,7 +519,7 @@ export class RackViewer {
       for (const c of cands) { this.t.rot = c.rot; for (let W = this.widthM - 0.05; W >= 0.3 && !(top && W <= top.W); W -= 0.05) { const r = search(c, W); if (r) { top = { c, sh: r.sh, W }; break; } } }
       this.t.rot = rot0; best = 0;
       if (top) { use(top.c, top.sh); this.suggestW = Math.floor(Math.round(top.W * 100) / 5) * 5; }
-      this.fitNote = this.suggestW ? `${this.fitNote ? this.fitNote + '；' : ''}这里太宽会挡门或碰到家具，建议宽度 ≤ ${this.suggestW}cm` : '空地不够，放哪都会挡门或碰到家具，建议拖到别处';
+      this.fitNote = this.suggestW ? `${this.fitNote ? this.fitNote + '；' : ''}这里太宽会挡门或碰到家具，建议宽度 ≤ ${this.suggestW}cm` : NOFIT_NOTE;
     } else if (best && !this.fitNote) this.fitNote = `已沿墙挪开 ${Math.round(Math.abs(best) * 100)}cm，避开${this.door ? '门的开启范围、' : ''}家具和墙角`;
     // AI 估的家具位置/大小常差 10~30cm：空档富余不到 80cm 就居中，否则两端各至少留 25cm
     if (this.hasZones() && !this.suggestW && fits(g, best)) {
@@ -638,8 +651,10 @@ export class RackViewer {
     return M.data[Math.floor(uv[1] * M.h) * M.w + Math.floor(uv[0] * M.w)];
   }
   // 按分割图判断候选：脚印（内缩 5cm）下面要是地面，压到家具/门不行；背面往后 10cm 要是墙/门/家具（还是地面说明墙线推错、鞋架悬在屋中间）
-  segBad(s) {
-    if (!this.segMap) return false;
+  segBad(s) { return this.segWhy(s).length > 0; }
+  // segBad 的各项理由（评测统计哪一项误判用）：few 看得到的点太少、onFurn 脚印压门或家具、notFloor 脚印下不是地面、floats 背后是地面（悬在屋中间）、vol 立体范围压门或家具
+  segWhy(s) {
+    if (!this.segMap) return [];
     const W = this.widthM, off = (this.depthM || 0.3) / 2, tan = new THREE.Vector3(s.front.z, 0, -s.front.x), cnt = [0, 0, 0, 0, 0, 0];
     let back = 0, backFloor = 0;
     for (let i = 0; i <= 6; i++) {
@@ -654,9 +669,15 @@ export class RackViewer {
     for (let i = 0; i <= 6; i++) for (const y of [0.2, 0.45, 0.7]) for (const j of [-1, 1]) {
       const g = this.segAt(s.q.clone().addScaledVector(tan, (i / 6 - 0.5) * (W - 0.1)).addScaledVector(s.front, j * (off - 0.03)).setY(y)); if (g >= 0) { vol++; if (g === 3 || g === 4) hit++; }
     }
-    if (vol >= 10 && hit / vol > 0.2) return true;
-    const n = cnt.reduce((a, b) => a + b, 0);
-    return n < 6 || (cnt[3] + cnt[4]) / n > 0.15 || (cnt[1] + cnt[5]) / n < 0.6 || back >= 3 && backFloor / back > 0.5;
+    const n = cnt.reduce((a, b) => a + b, 0), why = [];
+    if (vol >= 10 && hit / vol > 0.2) why.push('vol');
+    if (n < 6) why.push('few');
+    else {
+      if ((cnt[3] + cnt[4]) / n > 0.15) why.push('onFurn');
+      if ((cnt[1] + cnt[5]) / n < 0.6) why.push('notFloor');
+    }
+    if (back >= 3 && backFloor / back > 0.5) why.push('floats');
+    return why;
   }
   // 给用户点的 k 个候选：不压门和家具的排前面（AI 给的门、家具点常偏，压到的也留着补位），再按离门近（没门按离 AI 墙脚点近）排，互不重叠
   topSpots(k = 3) {
@@ -693,6 +714,7 @@ export class RackViewer {
       const w2 = near.map(([x]) => x).find(x => x.n.dot(f2) > 0.8);
       const q2 = w2 ? c.clone().addScaledVector(f2, off - c.clone().sub(w2.p).dot(f2)) : c.clone();
       const alt = { q: q2, p0: q2.clone().addScaledVector(f2, -off), front: f2, rot: THREE.MathUtils.radToDeg(Math.atan2(f2.x, f2.z)), bad: false, cost: -1, replace: o.name, altOf: main };
+      if (this.builtIn(main)) continue; // 到顶的嵌入柜换不掉
       S.splice(/[架凳]/.test(o.name) ? 0 : Math.min(1, S.length), 0, main, alt);
     }
     const out = [];
@@ -908,6 +930,8 @@ export class RackViewer {
 
 // 方案页「AI 视角」底图：dark 最远处的灰度，photo 原照片透明度，tint 分割色块透明度，seg 各组颜色（0 其他 1 地面 2 墙 3 门 4 家具 5 能挪走的）
 const AI_VIEW = { dark: 30, photo: 0.1, tint: 0.45, seg: { 0: [205, 202, 212], 1: [214, 190, 160], 2: [236, 234, 240], 3: [150, 120, 95], 4: [120, 130, 165], 5: [170, 185, 160] } };
+const BUILTIN_Y = [1.4, 1.7]; // 米：普通鞋柜、换鞋凳都在 1.2m 以下，这两个高度还是柜子就是到顶的嵌入柜
+const NOFIT_NOTE = '空地不够，放哪都会挡门或碰到家具，建议拖到别处';
 const TT_PAD = 0.08, TILT = [-0.35, 1.45]; // 结算页展示：模型到画面四边各留画面宽/高的 8%；俯仰范围（弧度）
 // 结算页：产品在纯色"影棚"里展示。单指拖动 = 水平 360° 转 + 上下俯仰；双击复位；不给缩放（模型显示大小只跟实际尺寸走）；松手后惯性转，慢慢回到自动旋转
 export class Turntable {
