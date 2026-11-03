@@ -304,8 +304,9 @@ export class RackViewer {
       for (let i = 1; i < P.length; i++) if (d2(P[i - 1], P[i]) < R) return { kind: 'door', part: 'all' };
     }
     const obs = this.obstacles || [];
-    for (let i = 0; i < obs.length; i++) { const P = obs[i].poly.map(q => this.px(q)); for (let j = 0; j < P.length; j++) if (d2(P[j], P[(j + 1) % P.length]) < R) return { kind: 'obs', i, edge: j }; }
+    for (let i = 0; i < obs.length; i++) { if (obs[i].src === 'depth') continue; const P = obs[i].poly.map(q => this.px(q)); for (let j = 0; j < P.length; j++) if (d2(P[j], P[(j + 1) % P.length]) < R) return { kind: 'obs', i, edge: j }; }
     for (let i = 0; i < obs.length; i++) {
+      if (obs[i].src === 'depth') continue; // 深度补的家具格子只参与摆放判断，不给拖
       const P = obs[i].poly.map(q => this.px(q)); let c = false;
       for (let a = 0, b = P.length - 1; a < P.length; b = a++) if ((P[a][1] > y) !== (P[b][1] > y) && x < (P[b][0] - P[a][0]) * (y - P[a][1]) / (P[b][1] - P[a][1]) + P[a][0]) c = !c;
       if (c) return { kind: 'obs', i, edge: -1 };
@@ -758,7 +759,7 @@ export class RackViewer {
     // 平时淡虚线（不抢眼），按住正在拖的那个框加深
     const col = this.conflict ? 0xff3b30 : 0xffffff, E = this.editing;
     const dashed = (P, on) => { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(P.map(q => q.clone().setY(0.003))), new THREE.LineDashedMaterial({ color: col, dashSize: 0.06, gapSize: 0.04, transparent: true, opacity: on ? 1 : 0.5 })); l.computeLineDistances(); m.add(l); };
-    (this.obstacles || []).forEach((o, i) => dashed([...o.poly, o.poly[0]], E?.kind === 'obs' && E.i === i));
+    (this.obstacles || []).forEach((o, i) => o.src !== 'depth' && dashed([...o.poly, o.poly[0]], E?.kind === 'obs' && E.i === i)); // 深度补的格子不画
     if (this.door) dashed(this.doorOutline(), E?.kind === 'door');
     // 候选脚印：白色半透明实心块，和 AI 认出的门/家具（虚线）区分开
     for (const { poly } of this.ghosts()) {
@@ -867,7 +868,7 @@ export class RackViewer {
   }
   // 方案页的「AI 视角」底图：深度图（越近越亮）上叠一层淡淡的原照片，再按分割图给地面、墙、门、家具上色（用户 2026-11-03 选定）。
   // 没有分割或深度时返回 null，照旧用照片
-  aiView(img) {
+  aiView(img, max = 1280) {
     const D = this.depthMap, M = this.segMap; if (!D || !M || D.w !== M.w || D.h !== M.h) return null;
     const dc = document.createElement('canvas'), sc = document.createElement('canvas'); dc.width = sc.width = D.w; dc.height = sc.height = D.h;
     const di = dc.getContext('2d').createImageData(D.w, D.h), si = sc.getContext('2d').createImageData(D.w, D.h);
@@ -877,7 +878,8 @@ export class RackViewer {
       si.data.set([...(AI_VIEW.seg[M.data[k]] || AI_VIEW.seg[0]), 255], k * 4);
     }
     dc.getContext('2d').putImageData(di, 0, 0); sc.getContext('2d').putImageData(si, 0, 0);
-    const out = document.createElement('canvas'); out.width = img.naturalWidth; out.height = img.naturalHeight;
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), out = document.createElement('canvas'); // 手机原图常 4000px 宽，底图用不着
+    out.width = Math.round(img.naturalWidth * k); out.height = Math.round(img.naturalHeight * k);
     const g = out.getContext('2d'), W = out.width, H = out.height;
     g.drawImage(dc, 0, 0, W, H);
     g.globalAlpha = AI_VIEW.photo; g.drawImage(img, 0, 0, W, H);
