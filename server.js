@@ -84,7 +84,7 @@ async function api(req, res, url) {
     if (process.env.SEG === 'off') return send(res, 200, { data: null });
     try {
       const r = await fetch(SEG_URL + '/seg', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: body.image }), signal: AbortSignal.timeout(20000) });
-      const j = await r.json(); return send(res, 200, j.data ? { w: j.w, h: j.h, data: j.data } : { data: null, warning: '分割失败：' + (j.error || r.status) });
+      const j = await r.json(); return send(res, 200, j.data ? { w: j.w, h: j.h, data: j.data, depth: j.depth } : { data: null, warning: '分割失败：' + (j.error || r.status) });
     } catch (e) { if (e.cause?.code === 'ECONNREFUSED') segStart(); return send(res, 200, { data: null, warning: '分割失败：' + (e.cause?.code || e.message) }); }
   }
   if (url.pathname === '/api/scene') {

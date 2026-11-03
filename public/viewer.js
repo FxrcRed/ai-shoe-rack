@@ -405,7 +405,11 @@ export class RackViewer {
       line[k] = side === k && wallP && wallP.clone().sub(c).dot(N[k]) > 0 ? wallP.clone() : c; src[k] = 'corner';
     }
     if (wallP && !line[side] && facing(side, wallP)) { line[side] = wallP.clone(); src[side] = 'base'; }
-    const P0 = (s.obstacles || []).map(o => o.pts.map(q => this.floorAt(q)).filter(Boolean));
+    // AI 没给的墙用深度图补：墙面像素打回 3D，沿墙法向的位置扎堆处就是墙（墙脚被家具挡住也能找到）。
+    // 试过和 AI 的墙差 0.3m 以上时改信深度：没涨，g01 变差，不用
+    const DW = this.depthWalls(N);
+    for (const k in DW) if (!line[k] && facing(k, DW[k])) { line[k] = DW[k]; src[k] = 'depth'; }
+    const P0 =(s.obstacles || []).map(o => o.pts.map(q => this.floorAt(q)).filter(Boolean));
     for (const k of ['back', 'left', 'right']) {
       if (!line[k]) continue;
       // 墙不能切进家具：家具最近落地边（AI 给得最准）必须在墙前，否则把墙往外推（门定的墙不动）
@@ -538,6 +542,45 @@ export class RackViewer {
     const d = p.clone().sub(new THREE.Vector3(0, this.t.camH, 0)).applyQuaternion(q);
     return d.z < -0.01 ? [(d.x / -d.z / th + 1) / 2, (1 - d.y / -d.z / tv) / 2] : null;
   }
+  // 照片坐标 → 相机射线方向（世界坐标，相机前方单位深度：点 = 相机 + 方向 × 深度）
+  pixDir(u, v) {
+    const R = THREE.MathUtils.degToRad, th = Math.tan(R(this.t.hfov) / 2), tv = th / (this.photoAspect || 0.75);
+    return new THREE.Vector3((u * 2 - 1) * th, (1 - v * 2) * tv, -1).applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(-R(this.t.pitch), 0, R(this.t.roll), 'YXZ')));
+  }
+  // 深度图（seg.py depth：相对视差，和分组图同尺寸）→ 每像素的相机深度（米）。视差 = a/深度 + b，a、b 用地面像素标定（地面点的深度由相机高和姿态算出）
+  depthCal() {
+    const D = this.depthMap, M = this.segMap; if (!D || !M || D.w !== M.w || D.h !== M.h) return null;
+    const key = `${this.t.camH},${this.t.pitch},${this.t.roll},${this.t.hfov}`; if (this._dc?.key === key) return this._dc;
+    let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let j = 0; j < D.h; j += 2) for (let i = 0; i < D.w; i += 2) {
+      if (M.data[j * D.w + i] !== 1) continue;
+      const d = this.pixDir((i + 0.5) / D.w, (j + 0.5) / D.h); if (d.y > -0.02) continue;
+      const z = this.t.camH / -d.y; if (z > 8) continue;
+      const x = 1 / z, y = D.data[j * D.w + i]; n++; sx += x; sy += y; sxx += x * x; sxy += x * y;
+    }
+    const a = n < 50 ? 0 : (n * sxy - sx * sy) / (n * sxx - sx * sx), b = (sy - a * sx) / n;
+    return (this._dc = { key, ok: a > 0, a, b, depth: k => { const x = (D.data[k] - b) / a; return x > 0.1 ? 1 / x : 10; } });
+  }
+  // 按深度图找墙：墙/门像素打回 3D，每个房间方向上沿法向的位置做直方图，尖峰（占墙像素 ≥10%）就是那面墙。返回 { back/left/right: 墙上一点 }
+  // 离相机 0.8m 以内的不要：画面边上贴着相机的那一小块墙（g06/r01）会被当成墙，鞋架被挤到镜头前
+  depthWalls(N) {
+    const C = this.depthCal(), M = this.segMap, out = {}; if (!C?.ok) return out;
+    const P = [], cam = new THREE.Vector3(0, this.t.camH, 0);
+    for (let j = 0; j < M.h; j += 2) for (let i = 0; i < M.w; i += 2) {
+      const k = j * M.w + i, g = M.data[k]; if (g !== 2 && g !== 3) continue;
+      const p = cam.clone().addScaledVector(this.pixDir((i + 0.5) / M.w, (j + 0.5) / M.h), C.depth(k));
+      if (p.y > 0.05 && p.y < 2.2 && Math.hypot(p.x, p.z) < 7) P.push(p);
+    }
+    if (P.length < 100) return out;
+    for (const k in N) {
+      const hist = new Map();
+      for (const p of P) { const s = Math.round(p.dot(N[k]) / 0.05); if (s < -16) hist.set(s, (hist.get(s) || 0) + 1); }
+      let best = null, bc = 0;
+      for (const s of hist.keys()) { const c = (hist.get(s - 1) || 0) + hist.get(s) + (hist.get(s + 1) || 0); if (c > bc) { bc = c; best = s; } }
+      if (best != null && bc >= Math.max(60, P.length * 0.1)) out[k] = N[k].clone().multiplyScalar(best * 0.05);
+    }
+    return out;
+  }
   // 照片分割图（seg.py：0 其他 1 地面 2 墙 3 门 4 固定家具/楼梯 5 小东西）在地面点处的组号，出画面 -1
   segAt(p) {
     const M = this.segMap, uv = M && this.photoUV(p); if (!uv || uv[0] < 0 || uv[0] >= 1 || uv[1] < 0 || uv[1] >= 1) return -1;
@@ -554,7 +597,8 @@ export class RackViewer {
       const g = this.segAt(s.q.clone().addScaledVector(tan, x).addScaledVector(s.front, -off - 0.1)); if (g >= 0) { back++; if (g === 1) backFloor++; }
     }
     // 鞋架立体范围（正面、背面，离地 0.2/0.45/0.7m）：桌子、长凳底下能看到地面，只查脚印拦不住；这些点落在家具或门上就是压到家具、挡门。
-    // 没有深度，视线穿过鞋架落到更远处的门上也会算进来（g10 贴侧墙被误判、建议改窄）；只查背面或再要求 AI 禁区同意都试过，更差
+    // 没有深度，视线穿过鞋架落到更远处的门上也会算进来（g10 贴侧墙被误判、建议改窄）；只查背面或再要求 AI 禁区同意都试过，更差。
+    // 用深度图把「看到的比这点远 0.3m」当空着也试过：g10 不变，g03/n01 反而变差（放不下时改窄找到了错的位置），不用
     let vol = 0, hit = 0;
     for (let i = 0; i <= 6; i++) for (const y of [0.2, 0.45, 0.7]) for (const j of [-1, 1]) {
       const g = this.segAt(s.q.clone().addScaledVector(tan, (i / 6 - 0.5) * (W - 0.1)).addScaledVector(s.front, j * (off - 0.03)).setY(y)); if (g >= 0) { vol++; if (g === 3 || g === 4) hit++; }

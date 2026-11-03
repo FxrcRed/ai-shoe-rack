@@ -211,7 +211,8 @@ async function segOf(img) {
     const k = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
     c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     const j = await post('api/seg', { image: c.toDataURL('image/jpeg', 0.85) }); if (!j.data) { if (j.warning) console.warn(j.warning); return null; }
-    return { w: j.w, h: j.h, data: Uint8Array.from(atob(j.data), ch => ch.charCodeAt(0)) };
+    const bytes = b => Uint8Array.from(atob(b), ch => ch.charCodeAt(0));
+    return { w: j.w, h: j.h, data: bytes(j.data), depth: j.depth ? new Uint16Array(bytes(j.depth).buffer) : null };
   } catch (e) { console.warn('分割失败', e); return null; }
 }
 
@@ -262,7 +263,7 @@ async function enterDesign() {
 }
 function placeScene(scene) {
   if (!scene) return;
-  viewer.segMap = scene.seg || null; viewer.placeScene(scene); S.placed = true; showFit(); // 放好后才定下提示和建议宽度，再刷新一次
+  viewer.segMap = scene.seg || null; viewer.depthMap = scene.seg?.depth ? { w: scene.seg.w, h: scene.seg.h, data: scene.seg.depth } : null; viewer.placeScene(scene); S.placed = true; showFit(); // 放好后才定下提示和建议宽度，再刷新一次
   if (scene.weak) toast(`${scene.issue || '照片里地面/墙脚线条不清楚'}，摆放可能不准：可以手动拖动，或点顶部第 2 格回去重拍`, 6000);
   else if (scene.note) toast('AI：' + scene.note);
 }

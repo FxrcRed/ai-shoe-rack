@@ -1,8 +1,9 @@
 # 照片语义分割 → 小尺寸分组图（每像素一个组号），给摆放判断「候选脚印下面是不是空地面、有没有压家具挡门」
 # 模型 Mask2Former（ADE20K 150 类，swin-small），CPU 每张约 2 秒；第一次运行从 HuggingFace 下载约 200MB
 # 需要：pip install torch torchvision transformers pillow numpy（CPU 版即可）
-#   python -I seg/seg.py serve [端口]                 常驻服务（server.js 自动启动）：POST /seg {"image": dataURL} → {"w", "h", "data": 每像素一字节的 base64}
+#   python -I seg/seg.py serve [端口]                 常驻服务（server.js 自动启动）：POST /seg {"image": dataURL} → {"w", "h", "data": 每像素一字节的 base64, "depth": 同尺寸 uint16 小端的 base64}
 #   python -I seg/seg.py <照片目录> <输出目录> [名字前缀...]   批量（评测用）
+#   python -I seg/seg.py depth <照片目录> <输出目录> [名字前缀...]   批量出深度图 <名>.depth（评测用）
 import sys, os, glob, io, json, base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
@@ -42,14 +43,14 @@ class Seg:
         return Image.fromarray(self.lut[seg]).resize((W, round(W * im.height / im.width)), Image.NEAREST)
 
 def serve(port):
-    seg = Seg()
+    seg, dep = Seg(), Depth()
     class H(BaseHTTPRequestHandler):
         def do_POST(self):
             try:
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'] or 0)))
                 im = Image.open(io.BytesIO(base64.b64decode(body['image'].split(',')[-1])))
-                g = seg(im)  # 不回 PNG：浏览器在后台时 Image.decode() 不返回
-                out, code = {'w': g.width, 'h': g.height, 'data': base64.b64encode(np.asarray(g).tobytes()).decode()}, 200
+                g, d = seg(im), dep(im)  # 不回 PNG：浏览器在后台时 Image.decode() 不返回
+                out, code = {'w': g.width, 'h': g.height, 'data': base64.b64encode(np.asarray(g).tobytes()).decode(), 'depth': base64.b64encode(d.tobytes()).decode()}, 200
             except Exception as e:
                 out, code = {'error': str(e)[:200]}, 500
             data = json.dumps(out).encode()
@@ -57,6 +58,30 @@ def serve(port):
         def log_message(self, *a): pass
     print(f'seg service http://127.0.0.1:{port}', flush=True)  # Windows 控制台编码不一定是 UTF-8，只打 ASCII
     ThreadingHTTPServer(('127.0.0.1', port), H).serve_forever()
+
+# 单目深度（Depth Anything V2 Small，约 100MB）：输出相对视差（越大越近，只差一个仿射变换），和分组图同尺寸，存 uint16 小端
+DEPTH = 'depth-anything/Depth-Anything-V2-Small-hf'
+
+class Depth:
+    def __init__(self):
+        from transformers import AutoModelForDepthEstimation
+        self.proc = AutoImageProcessor.from_pretrained(DEPTH)
+        self.model = AutoModelForDepthEstimation.from_pretrained(DEPTH).eval()
+
+    def __call__(self, im):
+        im = im.convert('RGB'); im.thumbnail((640, 640))
+        with torch.no_grad():
+            d = self.model(**self.proc(images=im, return_tensors='pt')).predicted_depth[0].numpy()
+        d = np.asarray(Image.fromarray(d).resize((W, round(W * im.height / im.width)), Image.BILINEAR))
+        return np.round((d - d.min()) / max(d.max() - d.min(), 1e-6) * 65535).astype('<u2')
+
+def batch_depth(src, dst, only):
+    os.makedirs(dst, exist_ok=True); dep = Depth()
+    for f in sorted(glob.glob(os.path.join(src, '*.jpg'))):
+        base = os.path.splitext(os.path.basename(f))[0]
+        if only and not any(base.startswith(o) for o in only): continue
+        d = dep(Image.open(f)); open(os.path.join(dst, base + '.depth'), 'wb').write(d.tobytes())
+        print(base, d.shape, flush=True)
 
 def batch(src, dst, only):
     os.makedirs(dst, exist_ok=True); seg = Seg()
@@ -68,4 +93,5 @@ def batch(src, dst, only):
 
 if __name__ == '__main__':
     if sys.argv[1] == 'serve': serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8790)
+    elif sys.argv[1] == 'depth': batch_depth(sys.argv[2], sys.argv[3], sys.argv[4:])
     else: batch(sys.argv[1], sys.argv[2], sys.argv[3:])
