@@ -79,15 +79,17 @@ function floorGap(p, q, cam) {
   return Math.hypot(a[0] / -a[1] - b[0] / -b[1], a[2] / -a[1] - b[2] / -b[1]);
 }
 
-// 相机高度：AI 直接估（常差 15%，当先验）、门高 2.05m、门宽约 0.88m 三个来源按各自误差加权（逆方差）
+// 相机高度：AI 直接估（常差 15%，当先验）、MoGe-2 米制几何、门高 2.05m、门宽约 0.88m 按各自误差加权（逆方差）
 // 每个来源的误差 = 点偏 1% 画面时结果变多少：门顶贴近地平线（站着俯拍）时门高法很敏感，门宽法就占主导
-const DOOR_H = 2.05, DOOR_W = 0.88, PT = 0.01;
-export function camHeight(a, cam) {
+// MoGe-2（seg.py 在分割地面上拟平面）：104 张实测它量出的门高离 2.05m 中位差 6%、相机高和门高法中位差 11%，按 ±10% 算
+const DOOR_H = 2.05, DOOR_W = 0.88, PT = 0.01, MOGE_REL = 0.1;
+export function camHeight(a, cam, mogeH) {
   // 贴画面边缘（3% 内）的点多半是物体被裁掉、AI 把点钳在了边上（实测门顶在画面外时它给 y=0 而不是 null）。
   // 但门顶真在边上时也是这样（合成图 y=0.022），位置分不出来：贴边的门顶只在门宽法也算出、两者差 <20% 时才用
   const pt = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
   const ok = p => pt(p) && p[0] > 0.03 && p[0] < 0.97 && p[1] > 0.03 && p[1] < 0.97;
   const est = [{ src: 'ai', h: Math.min(2.2, Math.max(0.3, Number.isFinite(+a.cameraHeight) ? +a.cameraHeight : 1.35)), s: 0.3 }];
+  if (mogeH > 0.3 && mogeH < 2.2) est.unshift({ src: 'moge', h: mogeH, s: mogeH * MOGE_REL }); // 有就当参照（est[0]），比 AI 估值准一倍
   const jitter = (f, pts) => { // f(pts) 对每个点上下左右偏 PT 的变化，平方和开根
     const h0 = f(pts); if (!h0) return null; let v = 0;
     pts.forEach((p, i) => [[PT, 0], [0, PT]].forEach(([du, dv]) => {
@@ -106,7 +108,7 @@ export function camHeight(a, cam) {
     if (r && r.h > 0.3 && r.h < 2.2) est.push({ src: 'doorW', h: r.h, s: Math.hypot(r.s, r.h * 0.09) }); // 门宽本身 ±9%（0.8~0.95m）
   }
   // 门高、门宽差太多（>35%）多半是 AI 点错了一个：留离 AI 估值近的那个（误差估计只管点抖动，管不了点错位置：实测锁侧点被点到门半腰，门宽法算出 0.31m 还自称 ±0.04）
-  // 和 AI 估值差 2 倍以上的几何估值不用：AI 直接估常差 15%，但不会错一倍；几何法点错一个就能错几倍
+  // 和参照（MoGe，没有就 AI 估值）差 2 倍以上的估值不用：AI 直接估常差 15%，但不会错一倍；几何法点错一个就能错几倍
   for (let i = est.length - 1; i > 0; i--) if (Math.abs(Math.log(est[i].h / est[0].h)) > 0.7) est.splice(i, 1);
   const dh = est.find(e => e.src === 'door'), dw = est.find(e => e.src === 'doorW');
   if (dh?.edge && !(dw && Math.abs(Math.log(dh.h / dw.h)) < 0.2)) est.splice(est.indexOf(dh), 1);
@@ -114,12 +116,13 @@ export function camHeight(a, cam) {
   let W = 0, H = 0;
   for (const e of est) { W += 1 / e.s ** 2; H += e.h / e.s ** 2; }
   const best = est.reduce((b, e) => e.s < b.s ? e : b);
-  return { h: H / W, src: est.length > 1 ? est.filter(e => e.src !== 'ai').map(e => e.src).join('+') : 'ai', parts: est.map(e => `${e.src}:${e.h.toFixed(2)}±${e.s.toFixed(2)}`).join(' '), best: best.src };
+  const srcs = est.filter(e => e.src !== 'ai').map(e => e.src).join('+');
+  return { h: H / W, src: srcs || 'ai', parts: est.map(e => `${e.src}:${e.h.toFixed(2)}±${e.s.toFixed(2)}`).join(' '), best: best.src };
 }
 
 // AI 结果（或 null）+ 几何检测结果 geo（或 null）+ 照片信息 → placeScene 参数
 // 地平线/倾斜用几何检测；墙面方向用几何检测的角度，AI 只决定靠哪面墙（取最接近 AI yaw 的那个 90° 倍数）
-export function toScene(ai, { f35, aspect, geo, hfov, light }) {
+export function toScene(ai, { f35, aspect, geo, hfov, light, mogeH }) {
   const num = (x, lo, hi, d) => Number.isFinite(+x) ? Math.min(hi, Math.max(lo, +x)) : d;
   const a = ai || {};
   const wall = ['left', 'back', 'right'].includes(a.wall) ? a.wall : 'back';
@@ -167,9 +170,9 @@ export function toScene(ai, { f35, aspect, geo, hfov, light }) {
   })).filter(o => o.pts.length && !MOVABLE.test(o.name));
   const spot = [];
   hfov = hfov || hfovOf(f35 || LENS_MM[a.lens] || LENS_MM.main, aspect);
-  // 相机高度：门高、门宽、AI 估值加权（见 camHeight）；没有几何检测时姿态不可信，只用 AI 估值
+  // 相机高度：门高、门宽、MoGe、AI 估值加权（见 camHeight）；没有几何检测时姿态不可信，只用 MoGe 或 AI 估值
   const roll = geo ? num(geo.roll, -15, 15, 0) : 0;
-  const ch = geo ? camHeight(a, { hfov, aspect, horizonY, roll }) : { h: num(a.cameraHeight, 0.3, 2.2, 1.35), src: 'ai', parts: '' };
+  const ch = geo ? camHeight(a, { hfov, aspect, horizonY, roll }, mogeH) : mogeH ? { h: mogeH, src: 'moge', parts: '' } : { h: num(a.cameraHeight, 0.3, 2.2, 1.35), src: 'ai', parts: '' };
   return {
     hfov, camHSrc: ch.src, camHAi: a.cameraHeight, camHParts: ch.parts,
     camH: ch.h,

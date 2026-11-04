@@ -4,6 +4,7 @@
 #   python -I seg/seg.py serve [端口]                 常驻服务（server.js 自动启动）：POST /seg {"image": dataURL} → {"w", "h", "data": 每像素一字节的 base64, "depth": 同尺寸 uint16 小端的 base64}
 #   python -I seg/seg.py <照片目录> <输出目录> [名字前缀...]   批量（评测用）
 #   python -I seg/seg.py depth <照片目录> <输出目录> [名字前缀...]   批量出深度图 <名>.depth（评测用）
+#   python -I seg/seg.py moge <照片目录> <输出目录>                  批量出 MoGe 相机高 moge.json（评测用，要先有分组图）
 import sys, os, glob, io, json, base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
@@ -45,14 +46,14 @@ class Seg:
         return Image.fromarray(self.lut[seg]).resize((W, round(W * im.height / im.width)), Image.NEAREST)
 
 def serve(port):
-    seg, dep = Seg(), Depth()
+    seg, dep, mg = Seg(), Depth(), Moge()
     class H(BaseHTTPRequestHandler):
         def do_POST(self):
             try:
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'] or 0)))
                 im = Image.open(io.BytesIO(base64.b64decode(body['image'].split(',')[-1])))
                 g, d = seg(im), dep(im)  # 不回 PNG：浏览器在后台时 Image.decode() 不返回
-                out, code = {'w': g.width, 'h': g.height, 'data': base64.b64encode(np.asarray(g).tobytes()).decode(), 'depth': base64.b64encode(d.tobytes()).decode()}, 200
+                out, code = {'w': g.width, 'h': g.height, 'data': base64.b64encode(np.asarray(g).tobytes()).decode(), 'depth': base64.b64encode(d.tobytes()).decode(), 'camH': mg(im, g)}, 200
             except Exception as e:
                 out, code = {'error': str(e)[:200]}, 500
             data = json.dumps(out).encode()
@@ -77,6 +78,48 @@ class Depth:
         d = np.asarray(Image.fromarray(d).resize((W, round(W * im.height / im.width)), Image.BILINEAR))
         return np.round((d - d.min()) / max(d.max() - d.min(), 1e-6) * 65535).astype('<u2')
 
+# MoGe-2（微软，MIT）：单张照片出米制点云 → 分组图里的地面拟平面 → 相机离地高（米），给 scene.js camHeight 当尺度来源
+# 门没拍全时原来只能让 AI 猜（和门高法中位差 24%），MoGe 中位差 11%。安装：pip install git+https://github.com/microsoft/MoGe.git
+MOGE = 'Ruicheng/moge-2-vits-normal'
+FLOOR_TOL = 0.03  # 地面平面内点阈值（米）
+MOGE_LEVEL = 3  # 分辨率档 0~9：104 张实测 3 档和默认 9 档相机高误差一样（中位 11%），CPU 快约一倍
+
+class Moge:
+    def __init__(self):
+        try:
+            from moge.model.v2 import MoGeModel
+            self.model = MoGeModel.from_pretrained(MOGE).eval()
+        except Exception as e:  # 没装 MoGe 时其余照常
+            print('moge off:', str(e)[:80].encode('ascii', 'replace').decode(), flush=True); self.model = None
+
+    def __call__(self, im, g):
+        if not self.model: return None
+        im = im.convert('RGB'); im.thumbnail((640, 640))
+        with torch.no_grad():
+            o = self.model.infer(torch.tensor(np.asarray(im) / 255, dtype=torch.float32).permute(2, 0, 1), use_fp16=False, resolution_level=MOGE_LEVEL)
+        pts, mask = o['points'].numpy(), o['mask'].numpy() > 0.5
+        fl = (np.asarray(g.resize((mask.shape[1], mask.shape[0]), Image.NEAREST)) == 1) & mask
+        P = pts[fl]
+        if len(P) < 200: return None
+        rng, best = np.random.default_rng(0), None
+        for _ in range(300):  # RANSAC 平面
+            a, b, c = P[rng.choice(len(P), 3, replace=False)]
+            n = np.cross(b - a, c - a); nn = np.linalg.norm(n)
+            if nn < 1e-9: continue
+            n /= nn; inl = np.abs((P - a) @ n) < FLOOR_TOL
+            if best is None or inl.sum() > best.sum(): best = inl
+        if best.mean() < 0.5: return None  # 地面不成平面（分割错了）
+        Q = P[best]; c0 = Q.mean(0); n = np.linalg.svd(Q - c0, full_matrices=False)[2][-1]
+        return round(float(abs(n @ c0)), 3)
+
+def batch_moge(src, dst):
+    mg, out = Moge(), {}
+    for f in sorted(glob.glob(os.path.join(src, '*.jpg'))):
+        base = os.path.splitext(os.path.basename(f))[0]; gp = os.path.join(dst, base + '.png')
+        if not os.path.exists(gp): continue
+        out[base + '.jpg'] = mg(Image.open(f), Image.open(gp)); print(base, out[base + '.jpg'], flush=True)
+    json.dump(out, open(os.path.join(dst, 'moge.json'), 'w'), indent=0)
+
 def batch_depth(src, dst, only):
     os.makedirs(dst, exist_ok=True); dep = Depth()
     for f in sorted(glob.glob(os.path.join(src, '*.jpg'))):
@@ -96,4 +139,5 @@ def batch(src, dst, only):
 if __name__ == '__main__':
     if sys.argv[1] == 'serve': serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8790)
     elif sys.argv[1] == 'depth': batch_depth(sys.argv[2], sys.argv[3], sys.argv[4:])
+    elif sys.argv[1] == 'moge': batch_moge(sys.argv[2], sys.argv[3])
     else: batch(sys.argv[1], sys.argv[2], sys.argv[3:])

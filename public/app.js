@@ -270,7 +270,7 @@ async function segOf(img) {
     c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     const j = await post('api/seg', { image: c.toDataURL('image/jpeg', 0.85) }); if (!j.data) { if (j.warning) console.warn(j.warning); return null; }
     const bytes = b => Uint8Array.from(atob(b), ch => ch.charCodeAt(0));
-    return { w: j.w, h: j.h, data: bytes(j.data), depth: j.depth ? new Uint16Array(bytes(j.depth).buffer) : null };
+    return { w: j.w, h: j.h, data: bytes(j.data), depth: j.depth ? new Uint16Array(bytes(j.depth).buffer) : null, camH: j.camH || null };
   } catch (e) { console.warn('分割失败', e); return null; }
 }
 
@@ -311,11 +311,11 @@ async function sceneFor(ctx) {
   const sp = $('stage-photo'); sp.src = p.url;
   $('stage').style.aspectRatio = `${p.img.naturalWidth} / ${p.img.naturalHeight}`; document.documentElement.style.setProperty('--ar', p.aspect); viewer.resize();
   let light = null; try { light = photoLight(p.img, geo?.horizonY, hfov); } catch {}
-  const opts = { f35: p.f35, aspect: p.aspect, geo, hfov, light };
+  const opts = { f35: p.f35, aspect: p.aspect, geo, hfov, light, mogeH: seg?.camH };
   const scene = toScene(ai, opts);
   if (p.tap) scene.tap = p.tap;
   scene.weak = !p.q.ok || !!scene.issue; // 本地检查不过，或 AI 三次识图都建议重拍
-  p.noDoor = !!ai && !/door/.test(scene.camHSrc); if (p.noDoor) renderPhotos(); // 没有完整的门：尺度只能靠 AI 估
+  p.noDoor = !!ai && scene.camHSrc === 'ai'; if (p.noDoor) renderPhotos(); // 没有完整的门、MoGe 也没算出：尺度只能靠 AI 估
   scene.seg = seg;
   return scene;
 }
