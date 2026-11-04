@@ -35,6 +35,6 @@ document.getElementById('scr').style.transform=homography(402,874,Q);
 const st=document.getElementById('stage');
 const ZM=new URLSearchParams(location.search).get('z');
 function fit(){if(ZM){const k=innerWidth/(+ZM);st.style.transform=`translate(${-875*k}px,${-750*k}px) scale(${k})`;return}const k=Math.min(innerWidth/1800,innerHeight/1348);st.style.transform=`translate(${-900*k}px,${-674*k}px) scale(${k})`}fit();onresize=fit;
-document.querySelector('iframe').src='index.html';
+document.querySelector('iframe').src='app.html';
 document.querySelector('iframe').onload=e=>{const d=e.target.contentDocument,s=d.createElement('style');s.textContent='html{scrollbar-width:none}::-webkit-scrollbar{display:none}';d.head.appendChild(s)};
 </script>

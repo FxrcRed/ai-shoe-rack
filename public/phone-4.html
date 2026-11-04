@@ -17,10 +17,9 @@ html,body{height:100%;margin:0;background:#c3cbe0;font-family:-apple-system,syst
 .sf>div{position:absolute;top:12px;height:56px;box-sizing:border-box;border:1px solid rgba(255,255,255,.85);border-radius:28px;display:flex;align-items:center;justify-content:space-around}
 .sf .nv{left:34px;width:83px}.sf .url{left:126px;width:184px;gap:8px;padding:0 14px;justify-content:center}.sf .mo{left:321px;width:48px}
 .hi{position:absolute;bottom:8px;left:50%;translate:-50% 0;width:140px;height:5px;border-radius:3px;background:#fff;opacity:.9;z-index:2;pointer-events:none}
-a{position:fixed;top:16px;right:16px;z-index:9;padding:10px 16px;border-radius:999px;background:#fff;color:#1c1b24;font:600 14px -apple-system,system-ui,sans-serif;text-decoration:none;box-shadow:0 4px 14px rgba(52,52,90,.12)}
+a{position:fixed;top:16px;left:16px;z-index:9;color:#1c1b24;font:600 14px/40px -apple-system,system-ui,sans-serif;text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:4px} /* 和 phone-split 左上角的 #nav 一样 */
 </style>
-<a href="phone-split.html">单机联动</a>
-<a href="#" id="ann" style="right:120px">标注间距</a>
+<a href="./">首页</a>
 <div id="g"></div>
 <script>
 const g=document.getElementById('g');
@@ -31,7 +30,7 @@ const CH=`<iframe></iframe><div class="island"><svg viewBox="0 0 124 36"><circle
 const CH_FRAME='<div class="phf"><i style="left:-6px;top:12.4%;height:3.1%"></i><i style="left:-6px;top:18.8%;height:6%"></i><i style="left:-6px;top:26.6%;height:6%"></i><i style="right:-6px;top:22.2%;height:9.3%"></i></div>';
 const hm=()=>new Intl.DateTimeFormat([],{hour:'numeric',minute:'2-digit'}).formatToParts(new Date()).filter(x=>x.type!=='dayPeriod').map(x=>x.value.trim()).join('');
 const tick=()=>document.querySelectorAll('.clk').forEach(e=>e.textContent=hm());setInterval(tick,1000);
-const frames=['home','photo','design','pay'].map(k=>{const d=document.createElement('div');d.className='p';d.innerHTML=CH_FRAME+'<div class="scr wire">'+CH+'</div><div class="phs"></div>';const f=d.querySelector('iframe');f.src='index.html';g.append(d);return[k,f]});
+const frames=['home','photo','design','pay'].map(k=>{const d=document.createElement('div');d.className='p';d.innerHTML=CH_FRAME+'<div class="scr wire">'+CH+'</div><div class="phs"></div>';const f=d.querySelector('iframe');f.src='app.html';g.append(d);return[k,f]});
 function fit(){const w=4*402+3*60,h=874,k=Math.min(innerWidth/(w+80),innerHeight/(h+120));g.style.transform=`translate(${-w/2*k}px,${-h/2*k}px) scale(${k})`}fit();onresize=fit;
 const until=async(fn,ms=20000)=>{const t=Date.now();while(Date.now()-t<ms){try{const v=fn();if(v)return v}catch{}await new Promise(r=>setTimeout(r,150))}};
 tick();
@@ -87,6 +86,6 @@ function annotate(d,w){
   const t=d.createElement('b');t.textContent=h;t.style.cssText=`position:absolute;left:${r.right-18}px;top:${r.top-6}px;color:#fff;background:${c2};padding:1px 3px;border-radius:3px`;box.append(e,t)}
 }
 let annOn=false;const annAll=()=>frames.forEach(([,f])=>{const d=f.contentDocument;if(annOn)annotate(d,f.contentWindow);else d?.getElementById('__ann')?.remove()});
-document.getElementById('ann').onclick=e=>{e.preventDefault();annOn=!annOn;e.target.textContent=annOn?'关闭标注':'标注间距';annAll()};
+window.__ann=()=>{annOn=!annOn;annAll();return annOn}; // 控制台跑 __ann() 开关标注
 setInterval(()=>annOn&&annAll(),1000); // 页面切换或面板变化后跟着刷新
 </script>

@@ -41,7 +41,8 @@ const segStart = () => {
 fetch(SEG_URL, { method: 'HEAD' }).catch(segStart);
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.json': 'application/json; charset=utf-8' };
 // 照片评测（tools/photo-eval/，只在本机用）：评测页和测试照片按目录托管；识图原始结果按照片缓存，改合并/几何时重跑不花额度
-const EVAL = path.join(ROOT, 'tools', 'photo-eval'), DEV_DIRS = { '/eval/': EVAL, '/test-photos/': path.join(ROOT, 'test-photos') };
+// 零件库（tools/1/parts.json，供应商商品数据，不公开）：四页总览的「零件库」面板读它，Pages 上没有就不显示按钮
+const EVAL = path.join(ROOT, 'tools', 'photo-eval'), DEV_DIRS = { '/eval/': EVAL, '/test-photos/': path.join(ROOT, 'test-photos'), '/parts/': path.join(ROOT, 'tools', '1') };
 const isLocal = req => /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress);
 // 评测识图缓存按识图模型分目录（默认模型沿用 cache/，换模型时 EVAL_CACHE=cache-qwen 之类）
 // 使用记录（朋友试用，页面上写明了会记录）：每次打开页面一个 sid，logs/<sid>/ 下存 events.jsonl、发给 AI 的压缩照片、识图结果
