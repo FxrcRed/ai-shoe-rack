@@ -272,7 +272,8 @@ export class RackViewer {
       // 都压门或家具：保留「放不下 / 建议宽度」的提示。有分割图且它说这里没压到就不提示：AI 给的门、家具点常偏（g12 位置对却提示太宽）
       else if (S0) {
         this.placeAt(S0);
-        if (S0.bad && (!this.segMap || S0.seg)) [this.fitNote, this.suggestW] = note;
+        const ref = S0.promoted && this.free0 || S0; // 旧鞋柜是因为空地不干净才排第一的：放不下按那块空地判断
+        if (ref.bad && (!this.segMap || ref.seg)) [this.fitNote, this.suggestW] = note;
         // 分割图说每个普通候选都压在家具上、脚下也不是地面（门边全是嵌入柜，国内玄关常见），又没有旧鞋架可换：AI 禁区没拦住也提示放不下
         else if (!this.noSegNofit && this.segMap && !this.spots3.some(c => c.replace) && this.spots3.filter(c => !c.altOf).every(c => { const w = this.segWhy(c); return w.includes('onFurn') && w.includes('notFloor'); })) this.fitNote = NOFIT_NOTE;
       }
@@ -704,6 +705,7 @@ export class RackViewer {
     this.t.rot = rot0;
     // 压着能挪走的东西（椅子、凳子、盆栽、箱包）也能放，但排在空地后面（g04 第一个候选落到大盆栽上）
     S.sort((a, b) => a.seg - b.seg || a.mov - b.mov || a.bad - b.bad || a.cost - b.cost);
+    this.free0 = S[0] || null; // 最好的空地（还没插旧鞋柜）
     // 照片里已有鞋架/鞋柜（AI 起的名字里带）：旧鞋架的位置排第一（换掉它）；鞋柜常是固定的，排第二让用户点。投到离它最近的墙上，没认出墙就沿 AI 墙脚线的方向
     const off = (this.depthM || 0.3) / 2 + 0.01;
     for (const o of this.obstacles || []) if (o.shoe || /鞋[架柜]/.test(o.name)) {
@@ -726,8 +728,11 @@ export class RackViewer {
       const q2 = w2 ? c.clone().addScaledVector(f2, off - c.clone().sub(w2.p).dot(f2)) : c.clone();
       const alt = { q: q2, p0: q2.clone().addScaledVector(f2, -off), front: f2, rot: THREE.MathUtils.radToDeg(Math.atan2(f2.x, f2.z)), bad: false, cost: -1, replace: o.name, altOf: main };
       if (this.builtIn(main)) continue; // 到顶的嵌入柜换不掉
-      // 第一个普通候选和旧鞋柜重叠（就压在它上面）：旧鞋柜顶到第一，否则排第二时被下面的去重丢掉，变成「放不下」误报（b003/q004/s005）
-      S.splice(/[架凳]/.test(o.name) || S[0]?.q.distanceTo(main.q) <= W * 0.9 ? 0 : Math.min(1, S.length), 0, main, alt);
+      // 第一个普通候选和旧鞋柜重叠（就压在它上面）：旧鞋柜顶到第一，否则排第二时被下面的去重丢掉，变成「放不下」误报（b003/q004/s005）；
+      // 第一个普通候选也不干净（分割判坏或压 AI 禁区）：没有好空地就换旧的，旧鞋柜也顶到第一（c007/h003/h004）
+      const first = /[架凳]/.test(o.name) || S[0]?.q.distanceTo(main.q) <= W * 0.9;
+      if (!first && (S[0]?.seg || S[0]?.bad)) main.promoted = true; // 放不下的提示仍按原来第一个空地判断（placeScene 的 free0）
+      S.splice(first || main.promoted ? 0 : Math.min(1, S.length), 0, main, alt);
     }
     const out = [];
     for (const s of S) if (out.length < k && out.every(o => o === s.altOf || o.q.distanceTo(s.q) > W * 0.9)) out.push(s);
