@@ -171,18 +171,21 @@ const MAX_PHOTOS = 3;
 S.photos = [];
 const loadImg = url => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = url; });
 
+// 透视：没 EXIF（截图、微信转发会丢）时用正交消失点估出的视角重算（AI 判断镜头类型实测会把主摄认成超广角）。seg：分割图回来后重算时传，去掉小东西轮廓上的线
+function geoOf(img, f35, aspect, seg) {
+  let hfov = hfovOf(f35 || LENS_MM.main, aspect), geo = null;
+  try {
+    geo = detectHorizon(img, hfov, seg);
+    if (!f35 && geo?.hfovEst) { hfov = geo.hfovEst; geo = detectHorizon(img, hfov, seg) || geo; }
+  } catch (e) { console.warn('透视检测失败', e); }
+  return { hfov, geo };
+}
 async function addPhotos(files, at) {
   for (const file of files) {
     if (!file || S.photos.length >= MAX_PHOTOS && at === undefined) break;
     const url = URL.createObjectURL(file);
     let img; try { img = await loadImg(url); } catch { toast('这张图片打不开'); continue; }
-    const aspect = img.naturalWidth / img.naturalHeight, f35 = await readFocal35(file);
-    let hfov = hfovOf(f35 || LENS_MM.main, aspect), geo = null;
-    try {
-      geo = detectHorizon(img, hfov);
-      // 没 EXIF（截图、微信转发会丢）：用正交消失点估出的视角重算（AI 判断镜头类型实测会把主摄认成超广角）
-      if (!f35 && geo?.hfovEst) { hfov = geo.hfovEst; geo = detectHorizon(img, hfov) || geo; }
-    } catch (e) { console.warn('透视检测失败', e); }
+    const aspect = img.naturalWidth / img.naturalHeight, f35 = file.f35 || await readFocal35(file), { hfov, geo } = geoOf(img, f35, aspect);
     const p = { url, img, aspect, f35, hfov, geo, q: photoQuality(img, geo), ai: '' };
     if (p.q.level !== 'ok' && ++S.nag > 2) p.q.forced = true; // 最多提示 2 次，之后按默认姿态继续
     track('photo', { at: at ?? S.photos.length, retake: at !== undefined, q: p.q.level, msg: p.q.msg, f35, aspect: Math.round(aspect * 1000) / 1000, forced: !!p.q.forced });
@@ -276,8 +279,8 @@ async function analyze(seq) {
   const segs = ph.map(p => segOf(p.img)); // 和识图并行
   let ai = null;
   try {
-    const t0 = Date.now(), j = await post('api/scene', { photos: ph.map(p => ({ image: shrink(p.img), aspect: p.aspect, horizonY: p.geo?.horizonY })), need: $('desc').value, sid: NO_LOG ? undefined : SID, seq });
-    ai = j.scene; track('scene', { seq, n: ph.length, ai: !!ai, aiBest: ai?.best, wall: ai?.wall, ms: Date.now() - t0, warning: j.warning });
+    const t0 = Date.now(), j = await post('api/scene', { photos: ph.map(p => ({ image: shrink(p.img), clean: shrink(p.img, 768, false), aspect: p.aspect, horizonY: p.geo?.horizonY })), need: $('desc').value, sid: NO_LOG ? undefined : SID, seq });
+    ai = j.scene; track('scene', { seq, n: ph.length, ai: !!ai, aiBest: ai?.best, wall: ai?.wall, fit: ai?.fit, ms: Date.now() - t0, warning: j.warning });
   } catch (e) { oops('照片分析失败，先按常见角度摆放，可以手动拖动调整', e.message); }
   if (seq !== S.seq) return null; // 期间照片又变了，以新的为准
   ph.forEach((p, i) => { p.ai = Array.isArray(ai?.issues) && typeof ai.issues[i] === 'string' ? ai.issues[i].trim() : ''; });
@@ -296,11 +299,13 @@ async function sceneFor(ctx) {
   // 用哪张：用户点过的那张，否则 pickBest（AI 的墙脚点只对它选的那张有效，换了张就不用）
   const t = ph.findIndex(p => p.tap), best = S.best = t >= 0 ? t : pickBest(ph, ai); // 保存效果图也用这张
   if (ai && best !== ai.best) ai = { ...ai, wallBase: null, doorTop: null, doorBottom: null, door: null };
-  const p = ph[best];
-  let { hfov, geo } = p;
-  if (!p.f35 && !p.geo?.hfovEst && ai?.lens && ai.lens !== 'main' && LENS_MM[ai.lens]) { // 没 EXIF 时按 AI 判断的镜头重算
+  const p = ph[best], seg = await Promise.race([segs[best], new Promise(r => setTimeout(r, 6000, null))]); // 分割服务刚启动在加载模型时不等它
+  // 分割图回来了：去掉衣服、包这些小东西轮廓上的线重算透视（挂衣架、外套的线会把走廊消失点带偏）
+  const g = seg && geoOf(p.img, p.f35, p.aspect, seg);
+  let { hfov, geo } = g?.geo ? g : p;
+  if (!p.f35 && !geo?.hfovEst && ai?.lens && ai.lens !== 'main' && LENS_MM[ai.lens]) { // 没 EXIF 时按 AI 判断的镜头重算
     hfov = hfovOf(LENS_MM[ai.lens], p.aspect);
-    try { geo = detectHorizon(p.img, hfov) || geo; } catch {}
+    try { geo = detectHorizon(p.img, hfov, seg) || geo; } catch {}
   }
   S.rec = validRec(ai?.rec) || DEFAULT_REC;
   const sp = $('stage-photo'); sp.src = p.url;
@@ -311,7 +316,7 @@ async function sceneFor(ctx) {
   if (p.tap) scene.tap = p.tap;
   scene.weak = !p.q.ok || !!scene.issue; // 本地检查不过，或 AI 三次识图都建议重拍
   p.noDoor = !!ai && !/door/.test(scene.camHSrc); if (p.noDoor) renderPhotos(); // 没有完整的门：尺度只能靠 AI 估
-  scene.seg = await Promise.race([segs[best], new Promise(r => setTimeout(r, 6000, null))]); // 分割服务刚启动在加载模型时不等它
+  scene.seg = seg;
   return scene;
 }
 
@@ -334,7 +339,8 @@ function snap() {
   const v = $('live'), c = document.createElement('canvas');
   v.pause(); // 定格，防止连点拍出两张；照片出来后 syncLive 关摄像头
   c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
-  c.toBlob(b => addPhotos([new File([b], 'live.jpg', { type: 'image/jpeg' })]), 'image/jpeg', 0.92);
+  // 截帧没有 EXIF，但知道是后置主摄按 4:3 取景、不裁切：直接按主摄焦距算视角。靠直线估视角在窄走廊里会估窄（试用记录 38°，实际约 53°），相机高度跟着算成 2m
+  c.toBlob(b => addPhotos([Object.assign(new File([b], 'live.jpg', { type: 'image/jpeg' }), { f35: LENS_MM.main })]), 'image/jpeg', 0.92);
 }
 $('cam').onclick = e => { if (live.stream && $('live').videoWidth && !$('live').paused) { e.preventDefault(); snap(); } };
 addEventListener('visibilitychange', syncLive);

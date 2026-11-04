@@ -83,7 +83,19 @@ function findVP(segs, rand) {
 }
 
 // img: <img> 或 canvas；hfov: 横向视角（度）。返回 { horizonY, roll, wallAz:[...], segs, vps } 或 null
-export function detectHorizon(img, hfov) {
+// 线段一侧过半落在分割图的小东西（seg.py 组 5：衣服、包、箱子、盆栽……）上：是物件轮廓，不是墙、地、门的边。两侧各偏 3px、沿线取 9 点
+function clutter(s, seg, W, H) {
+  let n = 0, a = 0, b = 0;
+  const at = (x, y) => x < 0 || y < 0 || x >= W || y >= H ? -1 : seg.data[Math.floor(y / H * seg.h) * seg.w + Math.floor(x / W * seg.w)];
+  for (let t = 0.1; t < 0.95; t += 0.1) {
+    const x = s.x1 + (s.x2 - s.x1) * t, y = s.y1 + (s.y2 - s.y1) * t, ga = at(x + s.a * 3, y + s.b * 3), gb = at(x - s.a * 3, y - s.b * 3);
+    if (ga < 0 || gb < 0) continue;
+    n++; if (ga === 5) a++; if (gb === 5) b++;
+  }
+  return n > 0 && (a * 2 > n || b * 2 > n);
+}
+// seg：分割图 { w, h, data }，有就去掉小东西轮廓上的线（挂衣架、外套的线会把走廊消失点带偏，试用记录里墙向差 27°）
+export function detectHorizon(img, hfov, seg) {
   const k = Math.min(1, 640 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
   const W = Math.round((img.naturalWidth || img.width) * k), H = Math.round((img.naturalHeight || img.height) * k);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -91,6 +103,7 @@ export function detectHorizon(img, hfov) {
   const px = ctx.getImageData(0, 0, W, H).data, gray = new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) gray[i] = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
   let segs = segments(gray, W, H);
+  if (seg) segs = segs.filter(s => !clutter(s, seg, W, H));
   const nSeg = segs.length;
   if (nSeg < 4) return null;
   const f = W / 2 / Math.tan(hfov / 2 * DEG), cx = W / 2, cy = H / 2;

@@ -1,4 +1,4 @@
-// viewer.js — 把方案参数渲染成光轴鞋架，透明背景叠在照片上；拖动/缩放/旋转对位；避开门扇开启范围；结算页旋转展示
+// viewer.js — 把方案参数渲染成光轴鞋架，透明背景叠在照片上；拖动/旋转对位；避开门扇开启范围；结算页旋转展示
 let SNAP = true; export const setSnap = v => { SNAP = v; }; // 评测对比开关
 import * as THREE from './vendor/three.module.js';
 import { buildSkeleton, analyzeSkeleton, BOARD_MATERIALS, ROD_FINISHES, UMBRELLA_OUT } from './rack.js';
@@ -235,7 +235,7 @@ export class RackViewer {
     const pitch = THREE.MathUtils.radToDeg(Math.atan((0.5 - s.horizonY) * 2 * tv));
     Object.assign(this.t, { hfov: s.hfov, camH: s.camH, pitch, roll: s.roll || 0, rot: s.yaw || 0, scale: 1 });
     this.setLight(s.light);
-    this.door = this.edits.door ? this.doorAt(this.edits.door.H.clone(), this.edits.door.L.clone(), this.edits.door.swing) : this.doorFrom(s.door);
+    this.door =this.edits.door ? this.doorAt(this.edits.door.H.clone(), this.edits.door.L.clone(), this.edits.door.swing) : this.doorFrom(s.door);
     // 有墙脚点：鞋架背面贴墙，中心 = 墙脚点 + 正面方向 × (进深/2 + 1cm)，换方案时按新进深重算
     let wallP = s.base && this.floorAt(s.base);
     this.wallSide = this.roomFrom(s, wallP);
@@ -268,14 +268,21 @@ export class RackViewer {
       const s0 = this.spots3[0], a0 = s0 && !s0.replace && !this.noCornerAlt && this.cornerAlt(s0.q);
       if (a0 && Math.abs(((a0.rot - s0.rot) % 360 + 540) % 360 - 180) > 30) this.spots3 = [s0, { ...a0, altOf: s0 }, ...this.spots3.slice(1)].slice(0, 3);
       const S0 = this.spots3[0], note = [this.fitNote, this.suggestW];
-      if (narrow) { this.placeAt(S0); this.suggestW = Math.round(narrow.W * 100); this.fitNote = `门边放不下 ${Math.round(this.widthM * 100)}cm 宽，建议宽度 ≤ ${this.suggestW}cm`; return; }
+      if (narrow) { this.placeAt(S0); this.suggestW = Math.round(narrow.W * 100); this.fitNote = `门边放不下 ${Math.round(this.widthM * 100)}cm 宽，建议宽度 ≤ ${this.suggestW}cm`; }
       // 都压门或家具：保留「放不下 / 建议宽度」的提示。有分割图且它说这里没压到就不提示：AI 给的门、家具点常偏（g12 位置对却提示太宽）
-      if (S0) {
+      else if (S0) {
         this.placeAt(S0);
         if (S0.bad && (!this.segMap || S0.seg)) [this.fitNote, this.suggestW] = note;
         // 分割图说每个普通候选都压在家具上、脚下也不是地面（门边全是嵌入柜，国内玄关常见），又没有旧鞋架可换：AI 禁区没拦住也提示放不下
         else if (!this.noSegNofit && this.segMap && !this.spots3.some(c => c.replace) && this.spots3.filter(c => !c.altOf).every(c => { const w = this.segWhy(c); return w.includes('onFurn') && w.includes('notFloor'); })) this.fitNote = NOFIT_NOTE;
       }
+      // AI 单独答的「门边能不能放」（scene.fit，ai.js 的 FIT）：几何的放不下、改窄提示要它也说放不下才出（分割、深度在好照片上常误判压到家具）；
+      // 它说放不下、又没有能换的旧鞋架，且分割图看到至少一个候选压家具或脚下不是地面（两边都同意；候选只是悬空、立体范围碰到的多是好照片），几何没拦也提示放不下。
+      // 它没答（无 AI、失败）照几何的
+      const warned = !!this.suggestW || this.fitNote === NOFIT_NOTE, fit = this.noAiFit ? null : s.fit, own = this.spots3.filter(c => !c.altOf);
+      const local = !this.segMap || !own.length || own.some(c => { const w = this.segWhy(c); return w.includes('onFurn') || w.includes('notFloor'); });
+      if (fit === true && warned) { this.fitNote = ''; this.suggestW = null; }
+      else if (fit === false && !warned && local && !this.spots3.some(c => c.replace)) this.fitNote = NOFIT_NOTE;
       return;
     }
     const hit = this.floorAt(s.spot);
@@ -516,7 +523,11 @@ export class RackViewer {
     }
     if (best === null) {
       let top = null;
-      for (const c of cands) { this.t.rot = c.rot; for (let W = this.widthM - 0.05; W >= 0.3 && !(top && W <= top.W); W -= 0.05) { const r = search(c, W); if (r) { top = { c, sh: r.sh, W }; break; } } }
+      const widest = () => { for (const c of cands) { this.t.rot = c.rot; for (let W = this.widthM - 0.05; W >= 0.3 && !(top && W <= top.W); W -= 0.05) { const r = search(c, W); if (r) { top = { c, sh: r.sh, W }; break; } } } };
+      widest();
+      // 深度补的家具是按像素反推的，常把门边空地也补满（g06/g09/g12 好照片被说成放哪都会挡门）：要说「放哪都会」只信 AI 认的家具，按它再找一次给建议宽度
+      const O = this.obstacles || [];
+      if (!top && O.some(o => o.src === 'depth')) { this.obstacles = O.filter(o => o.src !== 'depth'); widest(); this.obstacles = O; }
       this.t.rot = rot0; best = 0;
       if (top) { use(top.c, top.sh); this.suggestW = Math.floor(Math.round(top.W * 100) / 5) * 5; }
       this.fitNote = this.suggestW ? `${this.fitNote ? this.fitNote + '；' : ''}这里太宽会挡门或碰到家具，建议宽度 ≤ ${this.suggestW}cm` : NOFIT_NOTE;
@@ -715,7 +726,8 @@ export class RackViewer {
       const q2 = w2 ? c.clone().addScaledVector(f2, off - c.clone().sub(w2.p).dot(f2)) : c.clone();
       const alt = { q: q2, p0: q2.clone().addScaledVector(f2, -off), front: f2, rot: THREE.MathUtils.radToDeg(Math.atan2(f2.x, f2.z)), bad: false, cost: -1, replace: o.name, altOf: main };
       if (this.builtIn(main)) continue; // 到顶的嵌入柜换不掉
-      S.splice(/[架凳]/.test(o.name) ? 0 : Math.min(1, S.length), 0, main, alt);
+      // 第一个普通候选和旧鞋柜重叠（就压在它上面）：旧鞋柜顶到第一，否则排第二时被下面的去重丢掉，变成「放不下」误报（b003/q004/s005）
+      S.splice(/[架凳]/.test(o.name) || S[0]?.q.distanceTo(main.q) <= W * 0.9 ? 0 : Math.min(1, S.length), 0, main, alt);
     }
     const out = [];
     for (const s of S) if (out.length < k && out.every(o => o === s.altOf || o.q.distanceTo(s.q) > W * 0.9)) out.push(s);
@@ -819,7 +831,7 @@ export class RackViewer {
   }
   setShoes(on) { this.showShoes = on; if (this.cur) this.setScheme(this.cur); }
 
-  // 单指拖动：沿地面移动；双指：缩放 + 旋转；滚轮：缩放（按住 Shift 旋转）
+  // 单指拖动：沿地面移动；双指、滚轮：旋转。不给缩放：鞋架大小按照片透视和实际尺寸算，缩放会让它和房间的比例失真（用户 2026-11-04 定）
   bindPointer() {
     const el = this.renderer.domElement, pts = new Map();
     el.style.touchAction = 'none';
@@ -845,7 +857,7 @@ export class RackViewer {
           if (z.kind === 'door') Object.assign(zone, { H0: this.door.H.clone(), L0: this.door.L.clone() }); else zone.P0 = this.obstacles[z.i].poly.map(q => q.clone());
           this.editing = z; this.updateDoorMark(); this.render();
         }, 350);
-      } else if (pts.size === 2) { zone = null; this.editing = null; pinch = { ...pinchState(), scale: this.t.scale, rot: this.t.rot }; }
+      } else if (pts.size === 2) { zone = null; this.editing = null; pinch = { ...pinchState(), rot: this.t.rot }; }
     });
     el.addEventListener('pointermove', e => {
       if (!pts.has(e.pointerId)) return;
@@ -859,7 +871,7 @@ export class RackViewer {
         this.set({ x: this.t.x + p.x - last.x, z: this.t.z + p.z - last.z }); last = p;
       } else if (pts.size === 2 && pinch) {
         const c = pinchState(); this.dragged = moved = true;
-        this.set({ scale: THREE.MathUtils.clamp(pinch.scale * c.dist / pinch.dist, 0.5, 2), rot: pinch.rot - THREE.MathUtils.radToDeg(c.ang - pinch.ang) });
+        this.set({ rot: pinch.rot - THREE.MathUtils.radToDeg(c.ang - pinch.ang) });
       }
     });
     // 轻点（没拖动、350ms 内松手）：点在候选脚印上 → 飞过去；点在空地上 → 贴最近的墙放过去；点在鞋架上不动
@@ -875,8 +887,7 @@ export class RackViewer {
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
     el.addEventListener('wheel', e => {
       e.preventDefault();
-      if (e.shiftKey) this.set({ rot: this.t.rot + Math.sign(e.deltaY) * 5 });
-      else this.set({ scale: THREE.MathUtils.clamp(this.t.scale * (e.deltaY > 0 ? 0.95 : 1.05), 0.5, 2) });
+      this.set({ rot: this.t.rot + Math.sign(e.deltaY) * 5 });
     }, { passive: false });
   }
 

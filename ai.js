@@ -76,6 +76,17 @@ const SCENE = `你是室内摆放助手。看用户拍的同一个角落（玄�
 - rec: 看照片里地面、墙面、家具的颜色和风格，推荐一套能生产的搭配，{"style": 房间风格≤8字（如「浅色木地板」「白墙现代」）, "shelfMaterial": 只能是 实木/玻璃/金属板/亚克力 之一, "rodFinish": 只能是 银色铝/黑色 之一}`;
 
 // req.photos = [{ image, aspect, horizonY }]（旧格式 req.image 也认）
+// 单独问一句「门边能不能放」：放不下的提示靠它（分割、深度在好照片上常误判压到家具）。和 SCENE 分开问，不搅动识图的点和墙。
+// 温度 0 问一次：两次回答 93/101 一致；温度 0.7 问 3 次取多数反而差（2026-11-04，RESULTS.md 第二十一轮）
+const FIT = `这是在家里入户门附近拍的照片。想在入户门旁边放一个宽 60~80cm、深 30cm 的鞋架，背面贴墙。
+能放：入户门附近有一段至少 60cm 宽的空墙，墙前地面空着（或只有能随手挪走的鞋、凳子、盆栽、包），放上去不挡门的开启、不堵过道；或者门边已有能搬走的鞋架、鞋柜、鞋凳，可以换掉它。
+不能放：门边都是到顶的或嵌在墙里的固定柜子，或者门旁边紧接着别的门、门洞、楼梯、窗、过道，没有空墙。
+只输出 JSON：{"fit": true 或 false, "why": "≤15 字"}`;
+export function buildFitMessages(req) {
+  const photos = (req.photos || [{ image: req.image }]).slice(0, 3);
+  return [{ role: 'user', content: [...photos.map(p => ({ type: 'image_url', image_url: { url: p.clean || p.image } })), { type: 'text', text: (photos.length > 1 ? `${photos.length} 张照片拍的是同一个门口。` : '') + FIT }] }];
+}
+
 export function buildSceneMessages(req) {
   const photos = (req.photos || [{ image: req.image, aspect: req.aspect, horizonY: req.horizonY }]).slice(0, 3);
   const content = [{ type: 'text', text: `共 ${photos.length} 张照片。${req.need ? '用户需求：' + req.need : ''}` }];

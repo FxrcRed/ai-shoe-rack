@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { normalizeScheme } from './public/rack.js';
-import { buildGenerateMessages, tame, buildReviseMessages, buildSceneMessages, chat, mergeScenes, mockGenerate, mockRevise } from './ai.js';
+import { buildGenerateMessages, tame, buildReviseMessages, buildSceneMessages, buildFitMessages, chat, mergeScenes, mockGenerate, mockRevise } from './ai.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(ROOT, 'public');
@@ -97,20 +97,25 @@ async function api(req, res, url) {
   if (url.pathname === '/api/scene') {
     if (!body.image && !body.photos?.length) return send(res, 400, { error: '缺少照片' });
     const ld = logDir(body.sid), logScene = o => { if (ld) try { fs.writeFileSync(path.join(ld, `scene-${body.seq | 0}.json`), JSON.stringify(o)); } catch {} };
-    if (ld) try { fs.mkdirSync(ld, { recursive: true }); (body.photos || []).forEach((p, i) => typeof p.image === 'string' && fs.writeFileSync(path.join(ld, `photo-${body.seq | 0}-${i}.jpg`), Buffer.from(p.image.split(',')[1] || '', 'base64'))); } catch {}
+    // 带网格的是发给 AI 识图的图；-clean 是不带网格的 768 图（回放评测用它，网格的直线会干扰消失点和分割）
+    const saveImg = (url, name) => typeof url === 'string' && fs.writeFileSync(path.join(ld, name), Buffer.from(url.split(',')[1] || '', 'base64'));
+    if (ld) try { fs.mkdirSync(ld, { recursive: true }); (body.photos || []).forEach((p, i) => { saveImg(p.image, `photo-${body.seq | 0}-${i}.jpg`); saveImg(p.clean, `photo-${body.seq | 0}-${i}-clean.jpg`); }); } catch {}
     const cf = isLocal(req) && cacheFile(body.cacheKey), cached = cf && fs.existsSync(cf) && JSON.parse(fs.readFileSync(cf, 'utf8'));
-    if (cached) return send(res, 200, { scene: mergeScenes(cached.runs), runs: cached.runs.length, raw: cached.runs, ms: cached.ms, calls: cached.calls, tokens: cached.tokens, cached: true });
+    // 门边能不能放：单独问一次（和 3 次识图并发，失败当不知道）；评测缓存里没有的补问一次写回，识图结果不动
+    const askFit = () => env.key && env.visionModel ? vision(buildFitMessages(body), 2, 60000, 0, 0).then(r => typeof r.fit === 'boolean' ? r.fit : null, () => null) : null;
+    if (cached && cached.fit == null && (cached.fit = await askFit()) != null) fs.writeFileSync(cf, JSON.stringify(cached));
+    if (cached) return send(res, 200, { scene: { ...mergeScenes(cached.runs), fit: cached.fit ?? null }, runs: cached.runs.length, raw: cached.runs, ms: cached.ms, calls: cached.calls, tokens: cached.tokens, cached: true });
     if (!env.key || !env.visionModel) return send(res, 200, { scene: null, mock: true });
     try {
       // 单次识图的点和墙别波动很大：并发问 3 次（温度/模型不同）取共识，多花 API 额度换稳定
-      const t0 = Date.now(), msgs = buildSceneMessages(body), runs = (await Promise.allSettled([0, 1, 2].map(i => vision(msgs, 2, 90000, i ? 0.6 : 0, i))))
+      const fitP = askFit(), t0 = Date.now(), msgs = buildSceneMessages(body), runs = (await Promise.allSettled([0, 1, 2].map(i => vision(msgs, 2, 90000, i ? 0.6 : 0, i))))
         .filter(r => r.status === 'fulfilled' && r.value && typeof r.value === 'object').map(r => r.value);
       if (!runs.length) throw new Error('3 次识图都失败');
       console.log(`识图共识：${runs.length} 次结果，墙 ${runs.map(r => r.wall).join('/')}`);
-      const ms = Date.now() - t0;
-      if (cf) { fs.mkdirSync(path.dirname(cf), { recursive: true }); fs.writeFileSync(cf, JSON.stringify({ runs, ms, ...stat })); }
-      logScene({ runs, ms, ...stat });
-      return send(res, 200, { scene: mergeScenes(runs), runs: runs.length, mock: false, ...(cf ? { raw: runs, ms, ...stat } : {}) });
+      const ms = Date.now() - t0, fit = await fitP;
+      if (cf) { fs.mkdirSync(path.dirname(cf), { recursive: true }); fs.writeFileSync(cf, JSON.stringify({ runs, ms, fit, ...stat })); }
+      logScene({ runs, ms, fit, ...stat });
+      return send(res, 200, { scene: { ...mergeScenes(runs), fit }, runs: runs.length, mock: false, ...(cf ? { raw: runs, ms, ...stat } : {}) });
     } catch (e) {
       return send(res, 200, { scene: null, mock: true, warning: 'AI 识图失败，已按常见拍摄角度摆放：' + e.message });
     }

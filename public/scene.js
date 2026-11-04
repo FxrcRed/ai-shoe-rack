@@ -33,8 +33,8 @@ export async function readFocal35(file) {
   return 0;
 }
 
-// 照片缩到长边 1024，转成 jpeg dataURL（给 AI 用，约 100~200KB）
-export function shrink(img, max = 1024) {
+// 照片缩到长边 1024，转成 jpeg dataURL（给 AI 用，约 100~200KB）；grid=false 不叠坐标网格（问「门边能不能放」用，网格让 AI 更常说放不下）
+export function shrink(img, max = 1024, grid = true) {
   const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height; // <img> 或 canvas
   const k = Math.min(1, max / Math.max(w, h));
   const c = document.createElement('canvas');
@@ -43,7 +43,7 @@ export function shrink(img, max = 1024) {
   g.drawImage(img, 0, 0, c.width, c.height);
   // 叠 0.1 间隔的坐标网格和刻度，视觉模型读坐标会准很多
   g.lineWidth = 1; g.font = `${Math.round(c.width / 40)}px sans-serif`;
-  for (let i = 1; i < 10; i++) {
+  for (let i = 1; i < 10 && grid; i++) {
     const x = c.width * i / 10, y = c.height * i / 10;
     g.strokeStyle = 'rgba(255,0,255,0.45)';
     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, c.height); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke();
@@ -175,7 +175,7 @@ export function toScene(ai, { f35, aspect, geo, hfov, light }) {
     camH: ch.h,
     horizonY, roll,
     spot: [num(spot[0], 0.05, 0.95, 0.5), num(spot[1], Math.max(0.05, horizonY + 0.08), 0.98, Math.max(0.72, horizonY + 0.2))],
-    base, wall, yaw, roomAz: yaw - turn, corner, wallLines, obstacles, aspect, note: a.note || '', issue: typeof a.issueBest === 'string' ? a.issueBest.slice(0, 30) : '', ai: !!ai, geo: geo ? geo.src : '',
+    base, wall, yaw, roomAz: yaw - turn, corner, wallLines, obstacles, aspect, note: a.note || '', fit: typeof a.fit === 'boolean' ? a.fit : null, issue: typeof a.issueBest === 'string' ? a.issueBest.slice(0, 30) : '', ai: !!ai, geo: geo ? geo.src : '',
     light: mergeLight(a.light, light),
     door: doorOf(a.door),
   };
